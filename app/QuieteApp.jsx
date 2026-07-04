@@ -1,17 +1,20 @@
 "use client";
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import {
   Home, CalendarDays, Camera, ChevronRight, ChevronLeft, X, Plus, Check,
   Flame, Droplet, Footprints, Sparkles, Clock, Pill as PillIcon, Ban, ShieldCheck, Info,
   RefreshCw, User, Activity, FileText, Apple, Wheat, Milk, Fish, Leaf,
   ArrowRightLeft, TrendingUp, Trash2, ShoppingCart, Dumbbell, Loader2,
-  Wand2, Beef, UtensilsCrossed, Egg, Download, Share2, Zap
+  Wand2, Beef, UtensilsCrossed, Egg, Download, Share2, Zap, LogOut, Mail, Lock, Eye, EyeOff
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { calcolaSchema, ripartisciPasti } from "../lib/nutrition/engine";
 import { ARCHETIPI, suggerisciArchetipo } from "../lib/nutrition/archetipi";
 import { generaPiano } from "../lib/nutrition/piano";
 import { ALIMENTI_BY_ID } from "../lib/nutrition/alimenti";
+import { signUp, signIn, signOut, onAuthStateChange, getUser } from "../lib/supabase/auth";
+import { getProfile, upsertProfile } from "../lib/supabase/profile";
+import { isSupabaseConfigured } from "../lib/supabase/client";
 
 /* ============================================================
    DESIGN TOKENS (Giorgia's brand system)
@@ -259,6 +262,9 @@ export default function App() {
   const [day, setDay] = useState(0);
   const [foodMode, setFoodMode] = useState("yes");
   const [tf, setTf] = useState("week");
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [pendingProfile, setPendingProfile] = useState(null);
   const isDesktop = useIsDesktop();
   const piano = useMemo(() => {
     const p = store.profile;
@@ -276,39 +282,132 @@ export default function App() {
   const go = (t) => { setTab(t); window.scrollTo(0, 0); };
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("quiete_profile");
-      if (raw) {
-        const p = JSON.parse(raw);
-        setStore((s) => ({ ...s, profile: { ...s.profile, ...p } }));
-        if (p.assessmentDone || p.dietType) setScreen("app");
+    let mounted = true;
+    async function init() {
+      // 1. Try Supabase session
+      if (isSupabaseConfigured()) {
+        try {
+          const user = await getUser();
+          if (user && mounted) {
+            setAuthUser(user);
+            const remote = await getProfile();
+            if (remote && remote.assessmentDone) {
+              setStore((s) => ({ ...s, profile: { ...s.profile, ...remote } }));
+              try { localStorage.setItem("quiete_profile", JSON.stringify(remote)); } catch {}
+              setScreen("app");
+              setAuthLoading(false);
+              return;
+            }
+          }
+        } catch {}
       }
-    } catch {}
+      // 2. Fallback to localStorage
+      try {
+        const raw = localStorage.getItem("quiete_profile");
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (mounted) {
+            setStore((s) => ({ ...s, profile: { ...s.profile, ...p } }));
+            if (p.assessmentDone || p.dietType) setScreen("app");
+          }
+        }
+      } catch {}
+      if (mounted) setAuthLoading(false);
+    }
+    init();
+    // Listen for auth changes
+    const { unsubscribe } = onAuthStateChange((user) => { if (mounted) setAuthUser(user || null); });
+    return () => { mounted = false; unsubscribe(); };
   }, []);
 
-  const saveProfile = (patch, next) => {
+  const saveProfile = useCallback((patch, next) => {
     setStore((s) => {
       const profile = { ...s.profile, ...patch };
       try { localStorage.setItem("quiete_profile", JSON.stringify(profile)); } catch {}
+      // Sync to Supabase in background if authenticated
+      if (authUser) {
+        upsertProfile(profile).catch(() => {});
+      }
       return { ...s, profile };
     });
     if (next) setScreen(next);
-  };
+  }, [authUser]);
 
-  if (screen === "welcome") return <Welcome onStart={() => setScreen("assessment")} isDesktop={isDesktop} />;
+  const handleLogout = useCallback(async () => {
+    await signOut();
+    setAuthUser(null);
+    try { localStorage.removeItem("quiete_profile"); } catch {}
+    setStore((s) => ({ ...s, profile: { name: "Giorgia", sex: "F", height: 152 } }));
+    setScreen("welcome");
+  }, []);
+
+  if (authLoading) {
+    return (
+      <OnbBg>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+          <Seed size={64} />
+          <div style={{ fontFamily: serif, fontSize: 36, fontWeight: 600, color: C.ink }}>Quiete</div>
+          <Loader2 size={24} color={C.muted} className="qspin" />
+        </div>
+      </OnbBg>
+    );
+  }
+
+  if (screen === "welcome") return <Welcome onStart={() => setScreen("assessment")} onLogin={() => setScreen("login")} isDesktop={isDesktop} />;
+  if (screen === "login")
+    return (
+      <LoginScreen
+        isDesktop={isDesktop}
+        onBack={() => setScreen("welcome")}
+        onSuccess={async (user) => {
+          setAuthUser(user);
+          const remote = await getProfile();
+          if (remote) {
+            setStore((s) => ({ ...s, profile: { ...s.profile, ...remote } }));
+            try { localStorage.setItem("quiete_profile", JSON.stringify(remote)); } catch {}
+          }
+          setScreen("app");
+        }}
+      />
+    );
   if (screen === "assessment")
     return (
       <Assessment
         initial={store.profile}
         isDesktop={isDesktop}
-        onDone={(d) => saveProfile(d, "app")}
+        onDone={(d) => {
+          if (isSupabaseConfigured() && !authUser) {
+            setPendingProfile(d);
+            setScreen("signup");
+          } else {
+            saveProfile(d, "app");
+          }
+        }}
+      />
+    );
+  if (screen === "signup")
+    return (
+      <SignupScreen
+        email={pendingProfile?.email || ""}
+        isDesktop={isDesktop}
+        onBack={() => setScreen("assessment")}
+        onSkip={() => { saveProfile(pendingProfile, "app"); setPendingProfile(null); }}
+        onSuccess={async (user) => {
+          setAuthUser(user);
+          const profile = { ...store.profile, ...pendingProfile };
+          setStore((s) => ({ ...s, profile }));
+          try { localStorage.setItem("quiete_profile", JSON.stringify(profile)); } catch {}
+          await upsertProfile(profile).catch(() => {});
+          setPendingProfile(null);
+          setScreen("app");
+        }}
       />
     );
 
   if (isDesktop)
     return (
       <DesktopShell
-        {...{ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano }}
+        {...{ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano, authUser, handleLogout }}
       />
     );
 
@@ -345,7 +444,7 @@ export default function App() {
         </div>
       </nav>
 
-      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet }} />}
+      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet, authUser, handleLogout }} />}
       {toast.node}
     </Frame>
   );
@@ -362,7 +461,7 @@ const OnbBg = ({ children }) => (
 const field = { width: "100%", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "13px 14px", fontSize: 15, fontFamily: sans, color: C.text, outline: "none" };
 const fieldLabel = { fontSize: 12.5, fontWeight: 600, color: C.muted, marginBottom: 6, display: "block" };
 
-function Welcome({ onStart, isDesktop }) {
+function Welcome({ onStart, onLogin, isDesktop }) {
   const feats = [
     ["Nutrienti sempre", "Kcal e macro di ogni pasto e del giorno.", Flame],
     ["Foto con l'AI", "Fotografi il piatto, stima grammature e valori.", Wand2],
@@ -377,6 +476,11 @@ function Welcome({ onStart, isDesktop }) {
           <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: ".28em", color: C.gold, fontWeight: 600, marginTop: 4 }}>SALUTE INTESTINALE</div>
           <p style={{ fontFamily: serif, fontSize: isDesktop ? 26 : 21, color: C.ink, lineHeight: 1.35, maxWidth: 360, margin: "22px 0 8px", fontWeight: 500 }}>Il tuo piano, i tuoi macro, i tuoi progressi. In un posto solo.</p>
           <button onClick={onStart} style={{ ...btnPrimary, width: isDesktop ? "auto" : "100%", padding: isDesktop ? "15px 30px" : "15px 22px", marginTop: 16 }}>Inizia il tuo percorso <ChevronRight size={19} /></button>
+          {isSupabaseConfigured() && (
+            <button onClick={onLogin} style={{ ...btnGhost, width: isDesktop ? "auto" : "100%", justifyContent: "center", marginTop: 10 }}>
+              <Mail size={15} /> Hai già un account? Accedi
+            </button>
+          )}
           <div style={{ display: "flex", gap: 7, marginTop: 20 }}>{[0, 1, 2].map((i) => <span key={i} style={{ width: i === 0 ? 20 : 8, height: 8, borderRadius: 100, background: i === 0 ? C.ink : C.line }} />)}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: isDesktop ? 0 : 28 }}>
@@ -685,6 +789,137 @@ function AssessmentResult({ f, result, isDesktop }) {
         <span>Quiete fornisce linee guida educative basate su LARN/SINU e CREA. Non sostituisce il parere di un medico, biologo nutrizionista o dietista.</span>
       </div>
     </>
+  );
+}
+
+/* ============================================================
+   AUTH SCREENS — Login + Signup
+   ============================================================ */
+function LoginScreen({ isDesktop, onBack, onSuccess }) {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!email || !pw) return setErr("Inserisci email e password");
+    setLoading(true); setErr("");
+    try {
+      const { user } = await signIn(email, pw);
+      await onSuccess(user);
+    } catch (ex) {
+      setErr(ex.message === "Invalid login credentials" ? "Email o password non corretti" : ex.message || "Errore di accesso");
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <OnbBg>
+      <div style={{ width: "100%", maxWidth: isDesktop ? 440 : 400, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
+          <Seed size={44} />
+          <div style={{ fontFamily: serif, fontSize: 28, fontWeight: 600, color: C.ink }}>Accedi</div>
+        </div>
+        <form onSubmit={submit}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={fieldLabel}>Email</label>
+            <div style={{ position: "relative" }}>
+              <Mail size={17} color={C.muted} style={{ position: "absolute", left: 14, top: 14 }} />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="tu@esempio.it" style={{ ...field, paddingLeft: 40 }} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={fieldLabel}>Password</label>
+            <div style={{ position: "relative" }}>
+              <Lock size={17} color={C.muted} style={{ position: "absolute", left: 14, top: 14 }} />
+              <input value={pw} onChange={(e) => setPw(e.target.value)} type={showPw ? "text" : "password"} placeholder="La tua password" style={{ ...field, paddingLeft: 40, paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 10, top: 10, background: "none", border: "none", cursor: "pointer", color: C.muted }}>{showPw ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+            </div>
+          </div>
+          {err && <div style={{ color: C.clay, fontSize: 13, marginBottom: 12, fontWeight: 600 }}>{err}</div>}
+          <button type="submit" disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
+            {loading ? <><Loader2 size={18} className="qspin" /> Accesso in corso...</> : <>Accedi <ChevronRight size={19} /></>}
+          </button>
+        </form>
+        <button onClick={onBack} style={{ ...btnGhost, width: "100%", justifyContent: "center" }}><ChevronLeft size={15} /> Torna alla home</button>
+      </div>
+    </OnbBg>
+  );
+}
+
+function SignupScreen({ email: initialEmail, isDesktop, onBack, onSkip, onSuccess }) {
+  const [pw, setPw] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (pw.length < 6) return setErr("La password deve essere di almeno 6 caratteri");
+    setLoading(true); setErr("");
+    try {
+      const { user, session } = await signUp(initialEmail, pw);
+      if (!session) {
+        setDone(true);
+      } else {
+        await onSuccess(user);
+      }
+    } catch (ex) {
+      setErr(ex.message || "Errore nella registrazione");
+    } finally { setLoading(false); }
+  };
+
+  if (done) {
+    return (
+      <OnbBg>
+        <div style={{ width: "100%", maxWidth: isDesktop ? 440 : 400, margin: "0 auto", padding: "0 24px", textAlign: "center" }}>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}><Mail size={28} color={C.ink} /></div>
+          <h1 style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.ink, margin: "0 0 8px" }}>Controlla la tua email</h1>
+          <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.5, marginBottom: 24 }}>Abbiamo inviato un link di conferma a <b style={{ color: C.text }}>{initialEmail}</b>. Clicca il link per attivare il tuo account.</p>
+          <button onClick={onSkip} style={btnPrimary}>Continua nell'app <ChevronRight size={19} /></button>
+          <p style={{ fontSize: 12, color: C.muted, marginTop: 12 }}>I tuoi dati sono salvati localmente. Verranno sincronizzati dopo la conferma dell'email.</p>
+        </div>
+      </OnbBg>
+    );
+  }
+
+  return (
+    <OnbBg>
+      <div style={{ width: "100%", maxWidth: isDesktop ? 440 : 400, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <Seed size={44} />
+          <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 600, color: C.ink }}>Salva i tuoi dati</div>
+        </div>
+        <p style={{ fontSize: 13.5, color: C.muted, marginBottom: 20, lineHeight: 1.5 }}>Crea un account per accedere da qualsiasi dispositivo. Ci serve solo una password.</p>
+
+        <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: "14px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <Mail size={18} color={C.muted} />
+          <div>
+            <div style={{ fontSize: 11, color: C.muted }}>Il tuo account</div>
+            <div style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{initialEmail}</div>
+          </div>
+        </div>
+
+        <form onSubmit={submit}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={fieldLabel}>Scegli una password</label>
+            <div style={{ position: "relative" }}>
+              <Lock size={17} color={C.muted} style={{ position: "absolute", left: 14, top: 14 }} />
+              <input value={pw} onChange={(e) => setPw(e.target.value)} type={showPw ? "text" : "password"} placeholder="Minimo 6 caratteri" style={{ ...field, paddingLeft: 40, paddingRight: 44 }} />
+              <button type="button" onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 10, top: 10, background: "none", border: "none", cursor: "pointer", color: C.muted }}>{showPw ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+            </div>
+          </div>
+          {err && <div style={{ color: C.clay, fontSize: 13, marginBottom: 12, fontWeight: 600 }}>{err}</div>}
+          <button type="submit" disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
+            {loading ? <><Loader2 size={18} className="qspin" /> Creazione in corso...</> : <><ShieldCheck size={18} /> Crea account</>}
+          </button>
+        </form>
+        <button onClick={onSkip} style={{ ...btnGhost, width: "100%", justifyContent: "center" }}>Continua senza account</button>
+        <p style={{ fontSize: 11.5, color: C.muted, textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>Senza account i dati restano solo su questo dispositivo.</p>
+      </div>
+    </OnbBg>
   );
 }
 
@@ -1369,6 +1604,24 @@ function ProfileSheet({ ctx }) {
         {[["weight", "Peso kg"], ["waist", "Vita cm"], ["hips", "Fianchi cm"], ["abdomen", "Addome cm"], ["fm", "Massa grassa %"]].map(([k, ph]) => <input key={k} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} placeholder={ph} inputMode="decimal" style={{ ...input, flex: "1 1 46%", padding: 11 }} />)}
       </div>
       <button onClick={add} style={btnPrimary}><Plus size={17} /> Salva misurazione</button>
+
+      {/* Account section */}
+      <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: C.muted, margin: "18px 0 10px" }}>Account</div>
+      {ctx.authUser ? (
+        <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 100, background: C.ok }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Sincronizzato</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 12 }}>{ctx.authUser.email}</div>
+          <button onClick={ctx.handleLogout} style={{ ...btnGhost, marginTop: 0, width: "100%", justifyContent: "center", color: C.clay, borderColor: "#EDD3C8" }}><LogOut size={15} /> Esci dall'account</button>
+        </div>
+      ) : (
+        <div style={{ background: C.goldBg, borderRadius: 16, padding: "14px 16px" }}>
+          <div style={{ fontSize: 13, color: "#8a6412", lineHeight: 1.5 }}>I dati sono salvati solo su questo dispositivo. Crea un account per sincronizzare.</div>
+        </div>
+      )}
+
       <div style={{ fontSize: 11.5, color: C.muted, textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>I dati clinici vanno interpretati con la tua nutrizionista.</div>
     </>
   );
@@ -1413,7 +1666,7 @@ function useIsDesktop(bp = 1024) {
   return desktop;
 }
 
-function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano }) {
+function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano, authUser, handleLogout }) {
   const NAV = [
     ["oggi", Home, "Oggi"],
     ["piano", CalendarDays, "Piano"],
@@ -1473,7 +1726,7 @@ function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, 
           </div>
         </div>
       </div>
-      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet }} />}
+      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet, authUser, handleLogout }} />}
       {toast.node}
     </>
   );
