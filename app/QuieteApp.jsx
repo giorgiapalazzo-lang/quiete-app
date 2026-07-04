@@ -8,6 +8,10 @@ import {
   Wand2, Beef, UtensilsCrossed, Egg, Download, Share2, Zap
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { calcolaSchema, ripartisciPasti } from "../lib/nutrition/engine";
+import { ARCHETIPI, suggerisciArchetipo } from "../lib/nutrition/archetipi";
+import { generaPiano } from "../lib/nutrition/piano";
+import { ALIMENTI_BY_ID } from "../lib/nutrition/alimenti";
 
 /* ============================================================
    DESIGN TOKENS (Giorgia's brand system)
@@ -80,6 +84,15 @@ function sumMeal(items) {
 }
 const r0 = (x) => Math.round(x);
 const r1 = (x) => Math.round(x * 10) / 10;
+function sumPianoItems(items) {
+  return (items || []).reduce((a, it) => {
+    if (!it.g || !it.id) return a;
+    const al = ALIMENTI_BY_ID[it.id];
+    if (!al) return a;
+    const r = it.g / 100;
+    return { kcal: a.kcal + al.kcal * r, p: a.p + al.proteine * r, c: a.c + al.carboidrati * r, f: a.f + al.grassi * r };
+  }, { kcal: 0, p: 0, c: 0, f: 0 });
+}
 
 /* ============================================================
    SEED DATA — modelled on Giorgia's real nutritionist plans.
@@ -247,7 +260,19 @@ export default function App() {
   const [foodMode, setFoodMode] = useState("yes");
   const [tf, setTf] = useState("week");
   const isDesktop = useIsDesktop();
-  const plan = PLANS.find((p) => p.id === store.activePlan);
+  const piano = useMemo(() => {
+    const p = store.profile;
+    if (!p.assessmentDone || !p.macro) return null;
+    return generaPiano({ kcalObiettivo: p.kcalObiettivo, macro: p.macro, condizioni: p.condizioni || [], archetipo: p.archetipo || "mediterranea" });
+  }, [store.profile]);
+  const plan = useMemo(() => {
+    const p = store.profile;
+    if (p.assessmentDone && p.archetipo) {
+      const arche = ARCHETIPI[p.archetipo];
+      return { id: "assessment", name: arche?.nome || "Piano personalizzato", who: "Quiete", kcal: p.kcalObiettivo || 1800, goal: p.obiettivo || "", condition: p.archetipo, start: "", color: arche?.colore || C.ink };
+    }
+    return PLANS.find((pp) => pp.id === store.activePlan) || PLANS[0];
+  }, [store.profile, store.activePlan]);
   const go = (t) => { setTab(t); window.scrollTo(0, 0); };
 
   useEffect(() => {
@@ -256,7 +281,7 @@ export default function App() {
       if (raw) {
         const p = JSON.parse(raw);
         setStore((s) => ({ ...s, profile: { ...s.profile, ...p } }));
-        if (p.dietType) setScreen("app");
+        if (p.assessmentDone || p.dietType) setScreen("app");
       }
     } catch {}
   }, []);
@@ -270,29 +295,20 @@ export default function App() {
     if (next) setScreen(next);
   };
 
-  if (screen === "welcome") return <Welcome onStart={() => setScreen("signup")} isDesktop={isDesktop} />;
-  if (screen === "signup")
+  if (screen === "welcome") return <Welcome onStart={() => setScreen("assessment")} isDesktop={isDesktop} />;
+  if (screen === "assessment")
     return (
-      <Signup
+      <Assessment
         initial={store.profile}
         isDesktop={isDesktop}
-        onNext={(d) => saveProfile({ name: d.name, email: d.email, age: d.age, city: d.city, job: d.job }, "quiz")}
-        onSkip={() => setScreen("quiz")}
-      />
-    );
-  if (screen === "quiz")
-    return (
-      <Quiz
-        isDesktop={isDesktop}
-        onDone={(dietType, dietName) => saveProfile({ dietType, dietName }, "app")}
-        onSkip={() => setScreen("app")}
+        onDone={(d) => saveProfile(d, "app")}
       />
     );
 
   if (isDesktop)
     return (
       <DesktopShell
-        {...{ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast }}
+        {...{ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano }}
       />
     );
 
@@ -311,9 +327,9 @@ export default function App() {
       </header>
 
       <main style={{ padding: "20px 16px 100px", minHeight: "60vh" }}>
-        {tab === "oggi" && <Oggi {...{ plan, store, db, setSheet, go, toast, day }} />}
-        {tab === "piano" && <Piano {...{ day, setDay, setSheet }} />}
-        {tab === "spesa" && <Spesa {...{ store, db, tf, setTf }} />}
+        {tab === "oggi" && <Oggi {...{ plan, store, db, setSheet, go, toast, day, piano }} />}
+        {tab === "piano" && <Piano {...{ day, setDay, setSheet, piano, store }} />}
+        {tab === "spesa" && <Spesa {...{ store, db, tf, setTf, piano }} />}
         {tab === "allenamento" && <Allenamento />}
         {tab === "diario" && <Diario {...{ store, db, setSheet, toast }} />}
       </main>
@@ -376,128 +392,315 @@ function Welcome({ onStart, isDesktop }) {
   );
 }
 
+
 /* ============================================================
-   ISCRIZIONE
+   ASSESSMENT — percorso nutrizionale reale (sostituisce iscrizione + quiz)
+   Raccoglie i dati, calcola BMR/TDEE/macros col motore, suggerisce
+   l'archetipo e mostra lo schema orientativo. NON è una prescrizione.
    ============================================================ */
-function Signup({ initial, onNext, onSkip, isDesktop }) {
-  const [f, setF] = useState({ name: initial?.name && initial.name !== "Giorgia" ? initial.name : "", email: initial?.email || "", age: initial?.age || "", city: initial?.city || "", job: initial?.job || "" });
+const ATTIVITA_OPT = [
+  ["sedentario", "Sedentaria", "Lavoro da seduta, poco movimento"],
+  ["leggero", "Leggera", "Cammino, 1–3 allenamenti leggeri"],
+  ["moderato", "Moderata", "3–5 allenamenti a settimana"],
+  ["attivo", "Attiva", "6–7 allenamenti intensi"],
+  ["molto_attivo", "Molto attiva", "Atleta o doppie sessioni"],
+];
+const OBIETTIVO_OPT = [
+  ["dimagrimento", "Perdere peso", Flame],
+  ["mantenimento", "Mantenermi in forma", ShieldCheck],
+  ["massa", "Aumentare massa muscolare", Dumbbell],
+  ["ricomposizione", "Ricomposizione corporea", Activity],
+  ["salute_intestinale", "Stare meglio con l'intestino", Leaf],
+];
+const COND_OPT = [
+  ["ibs", "Colon irritabile / gonfiore"],
+  ["intolleranza_lattosio", "Intolleranza al lattosio"],
+  ["celiachia", "Celiachia"],
+  ["diabete_t2", "Diabete tipo 2"],
+  ["ipertensione", "Ipertensione"],
+  ["dislipidemia", "Colesterolo / trigliceridi alti"],
+  ["menopausa", "Menopausa"],
+  ["gravidanza", "Gravidanza"],
+  ["vegetariano", "Vegetariana"],
+  ["vegano", "Vegana"],
+];
+const ALLEN_OPT = [["nessuno", "Nessuno"], ["cardio", "Cardio"], ["forza", "Pesi / forza"], ["misto", "Misto"]];
+
+const PickCard = ({ active, onClick, children }) => (
+  <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", background: active ? C.greenL : C.card, border: `1.5px solid ${active ? C.green : C.line}`, borderRadius: 15, padding: "13px 15px", cursor: "pointer", fontFamily: sans, textAlign: "left", boxShadow: active ? "none" : SH, transition: "all .12s" }}>
+    {children}
+  </button>
+);
+
+function Assessment({ initial, onDone, isDesktop }) {
+  const [step, setStep] = useState(0);
+  const [f, setF] = useState({
+    name: initial?.name && initial.name !== "Giorgia" ? initial.name : "",
+    email: initial?.email || "",
+    sesso: initial?.sesso || "",
+    eta: initial?.eta || "",
+    altezza: initial?.altezza || "",
+    peso: initial?.peso || "",
+    attivita: initial?.attivita || "",
+    obiettivo: initial?.obiettivo || "",
+    allenamento: initial?.allenamento || "nessuno",
+    condizioni: initial?.condizioni || [],
+  });
   const [err, setErr] = useState("");
-  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
-  const submit = () => {
-    if (!f.name.trim()) return setErr("Inserisci il tuo nome");
-    if (!/^\S+@\S+\.\S+$/.test(f.email)) return setErr("Inserisci un'email valida");
-    setErr("");
-    onNext(f);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const toggleCond = (c) =>
+    setF((s) => ({ ...s, condizioni: s.condizioni.includes(c) ? s.condizioni.filter((x) => x !== c) : [...s.condizioni, c] }));
+
+  const STEPS = 5; // 0 identità · 1 corpo · 2 obiettivo · 3 condizioni · 4 risultato
+  const next = () => { setErr(""); setStep((s) => s + 1); };
+  const back = () => { setErr(""); setStep((s) => Math.max(0, s - 1)); };
+
+  const validateStep = () => {
+    if (step === 0) {
+      if (!f.name.trim()) return "Inserisci il tuo nome";
+      if (!/^\S+@\S+\.\S+$/.test(f.email)) return "Inserisci un'email valida";
+      if (!f.sesso) return "Seleziona il sesso biologico (serve al calcolo metabolico)";
+    }
+    if (step === 1) {
+      const eta = +f.eta, h = +f.altezza, p = +f.peso;
+      if (!(eta >= 14 && eta <= 100)) return "Inserisci un'età valida (14–100)";
+      if (!(h >= 120 && h <= 220)) return "Inserisci un'altezza valida in cm";
+      if (!(p >= 30 && p <= 250)) return "Inserisci un peso valido in kg";
+      if (!f.attivita) return "Seleziona il tuo livello di attività";
+    }
+    if (step === 2 && !f.obiettivo) return "Scegli un obiettivo";
+    return "";
   };
-  const fields = [
-    ["name", "Nome", "text", "Come ti chiami", true],
-    ["email", "Email", "email", "tu@esempio.it", true],
-    ["age", "Età", "number", "es. 29", false],
-    ["city", "Città", "text", "es. Milano", false],
-    ["job", "Professione", "text", "es. Insegnante", false],
-  ];
+  const advance = () => {
+    const e = validateStep();
+    if (e) return setErr(e);
+    next();
+  };
+
+  // Calcolo (solo quando serve).
+  const result = useMemo(() => {
+    if (step < 4) return null;
+    const profilo = {
+      sesso: f.sesso, eta: +f.eta, altezzaCm: +f.altezza, pesoKg: +f.peso,
+      attivita: f.attivita, obiettivo: f.obiettivo, allenamento: f.allenamento,
+    };
+    const schema = calcolaSchema(profilo);
+    const arch = suggerisciArchetipo({ obiettivo: f.obiettivo, condizioni: f.condizioni });
+    const pasti = ripartisciPasti(schema.kcalObiettivo, schema.macro);
+    return { schema, arch, pasti };
+  }, [step, f]);
+
+  const finish = () => {
+    onDone({
+      name: f.name, email: f.email, sesso: f.sesso, eta: +f.eta, altezza: +f.altezza, peso: +f.peso,
+      attivita: f.attivita, obiettivo: f.obiettivo, allenamento: f.allenamento, condizioni: f.condizioni,
+      // esiti calcolati (lead data + piano)
+      kcalObiettivo: result.schema.kcalObiettivo, macro: result.schema.macro,
+      archetipo: result.arch.consigliato, archetipoNome: ARCHETIPI[result.arch.consigliato].nome,
+      richiedeProfessionista: result.arch.richiedeProfessionista,
+      assessmentDone: true,
+    });
+  };
+
+  const wrap = { width: "100%", maxWidth: isDesktop ? 620 : 420, margin: "0 auto", padding: "0 24px" };
+  const title = (t) => <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 30 : 24, fontWeight: 600, color: C.ink, margin: "2px 0 18px", lineHeight: 1.15 }}>{t}</h1>;
+
   return (
     <OnbBg>
-      <div style={{ width: "100%", maxWidth: isDesktop ? 560 : 400, margin: "0 auto", padding: "0 24px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}><Seed size={34} /><span style={{ fontFamily: serif, fontWeight: 600, fontSize: 22, color: C.ink }}>Quiete</span></div>
-        <Eyebrow>Passo 1 di 2</Eyebrow>
-        <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 32 : 26, fontWeight: 600, color: C.ink, margin: "2px 0 6px" }}>Crea il tuo profilo</h1>
-        <p style={{ fontSize: 13.5, color: C.muted, marginBottom: 20 }}>Bastano pochi dati per personalizzare piano e consigli.</p>
-        <div style={{ display: isDesktop ? "grid" : "block", gridTemplateColumns: isDesktop ? "1fr 1fr" : undefined, gap: 14 }}>
-          {fields.map(([k, label, type, ph, req]) => (
-            <div key={k} style={{ marginBottom: isDesktop ? 0 : 14, gridColumn: isDesktop && (k === "name" || k === "email" || k === "job") ? "1 / -1" : undefined }}>
-              <label style={fieldLabel}>{label}{req && <span style={{ color: C.clay }}> *</span>}</label>
-              <input value={f[k]} onChange={set(k)} type={type} placeholder={ph} inputMode={k === "age" ? "numeric" : undefined} style={field} />
+      <div style={wrap}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
+          {Array.from({ length: STEPS }).map((_, i) => <span key={i} style={{ flex: 1, height: 5, borderRadius: 100, background: i <= step ? C.ink : C.line }} />)}
+        </div>
+
+        {/* STEP 0 — identità */}
+        {step === 0 && (
+          <>
+            <Eyebrow>Iniziamo · 1/5</Eyebrow>
+            {title("Chi sei")}
+            <div style={{ marginBottom: 14 }}><label style={fieldLabel}>Nome *</label><input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Come ti chiami" style={field} /></div>
+            <div style={{ marginBottom: 14 }}><label style={fieldLabel}>Email *</label><input value={f.email} onChange={(e) => set("email", e.target.value)} type="email" placeholder="tu@esempio.it" style={field} /></div>
+            <label style={fieldLabel}>Sesso biologico *</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[["donna", "Donna"], ["uomo", "Uomo"]].map(([k, l]) => (
+                <PickCard key={k} active={f.sesso === k} onClick={() => set("sesso", k)}>
+                  <span style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{l}</span>
+                </PickCard>
+              ))}
             </div>
-          ))}
+            <p style={{ fontSize: 11.5, color: C.muted, marginTop: 8 }}>Serve alla formula del metabolismo (Mifflin-St Jeor), che differisce tra uomo e donna.</p>
+          </>
+        )}
+
+        {/* STEP 1 — corpo + attività */}
+        {step === 1 && (
+          <>
+            <Eyebrow>Il tuo corpo · 2/5</Eyebrow>
+            {title("Qualche misura")}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 18 }}>
+              {[["eta", "Età", "anni"], ["altezza", "Altezza", "cm"], ["peso", "Peso", "kg"]].map(([k, l, u]) => (
+                <div key={k}><label style={fieldLabel}>{l}</label><input value={f[k]} onChange={(e) => set(k, e.target.value)} type="number" inputMode="numeric" placeholder={u} style={field} /></div>
+              ))}
+            </div>
+            <label style={fieldLabel}>Quanto ti muovi?</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {ATTIVITA_OPT.map(([k, l, d]) => (
+                <PickCard key={k} active={f.attivita === k} onClick={() => set("attivita", k)}>
+                  <div><div style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{l}</div><div style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>{d}</div></div>
+                </PickCard>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* STEP 2 — obiettivo + allenamento */}
+        {step === 2 && (
+          <>
+            <Eyebrow>Il tuo obiettivo · 3/5</Eyebrow>
+            {title("Cosa vuoi ottenere")}
+            <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 18 }}>
+              {OBIETTIVO_OPT.map(([k, l, Ic]) => (
+                <PickCard key={k} active={f.obiettivo === k} onClick={() => set("obiettivo", k)}>
+                  <span style={{ width: 38, height: 38, borderRadius: 11, background: C.greenL, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><Ic size={18} color={C.ink} /></span>
+                  <span style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{l}</span>
+                </PickCard>
+              ))}
+            </div>
+            <label style={fieldLabel}>Ti alleni?</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {ALLEN_OPT.map(([k, l]) => (
+                <PickCard key={k} active={f.allenamento === k} onClick={() => set("allenamento", k)}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{l}</span>
+                </PickCard>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* STEP 3 — condizioni */}
+        {step === 3 && (
+          <>
+            <Eyebrow>Attenzioni · 4/5</Eyebrow>
+            {title("Hai condizioni da considerare?")}
+            <p style={{ fontSize: 13, color: C.muted, marginTop: -8, marginBottom: 16 }}>Seleziona quelle che ti riguardano. Puoi anche saltare.</p>
+            <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "1fr 1fr" : "1fr", gap: 9 }}>
+              {COND_OPT.map(([k, l]) => (
+                <PickCard key={k} active={f.condizioni.includes(k)} onClick={() => toggleCond(k)}>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${f.condizioni.includes(k) ? C.green : C.line}`, background: f.condizioni.includes(k) ? C.green : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{f.condizioni.includes(k) && <Check size={13} color="#fff" />}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>{l}</span>
+                </PickCard>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* STEP 4 — risultato */}
+        {step === 4 && result && (
+          <AssessmentResult f={f} result={result} isDesktop={isDesktop} />
+        )}
+
+        {/* NAV */}
+        <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+          {step > 0 && step < 4 && <button onClick={back} style={{ ...btnGhost, marginTop: 0 }}><ChevronLeft size={15} /> Indietro</button>}
+          {step < 3 && <button onClick={advance} style={{ ...btnPrimary, flex: 1 }}>Continua <ChevronRight size={19} /></button>}
+          {step === 3 && <button onClick={advance} style={{ ...btnPrimary, flex: 1 }}>Vedi il tuo schema <ChevronRight size={19} /></button>}
+          {step === 4 && <button onClick={finish} style={{ ...btnPrimary, flex: 1 }}>Entra in Quiete <ChevronRight size={19} /></button>}
         </div>
         {err && <div style={{ color: C.clay, fontSize: 13, marginTop: 12, fontWeight: 600 }}>{err}</div>}
-        <button onClick={submit} style={{ ...btnPrimary, marginTop: 22 }}>Continua <ChevronRight size={19} /></button>
-        <button onClick={onSkip} style={{ ...btnGhost, marginTop: 14, width: "100%", justifyContent: "center" }}>Salta per ora</button>
+        {step === 4 && <button onClick={back} style={{ ...btnGhost, width: "100%", justifyContent: "center" }}>Modifica i dati</button>}
       </div>
     </OnbBg>
   );
 }
 
-/* ============================================================
-   QUIZ — Che tipo di dieta sei?
-   ============================================================ */
-const QUIZ = [
-  { q: "Qual è il tuo obiettivo principale?", a: [["Sentirmi leggera, meno gonfiore", "gut", Leaf], ["Mangiare sano ed equilibrato", "med", Apple], ["Sostenere allenamento e massa", "protein", Dumbbell], ["Più energia e concentrazione", "energy", Zap]] },
-  { q: "Come va la tua digestione?", a: [["Spesso gonfiore o fastidi", "gut", Ban], ["Tutto sommato bene", "med", ShieldCheck], ["Ho di nuovo fame poco dopo", "energy", Clock], ["Dipende molto dai cibi", "gut", Info]] },
-  { q: "Che rapporto hai con carne e pesce?", a: [["Ne mangio volentieri", "protein", Fish], ["Poca, preferisco vegetale", "plant", Leaf], ["Equilibrato", "med", UtensilsCrossed], ["Attenta alle porzioni", "gut", Apple]] },
-  { q: "Quanto ti muovi?", a: [["Alleno spesso (3+ a settimana)", "protein", Dumbbell], ["Cammino, attività leggera", "med", Footprints], ["Poco, vita sedentaria", "energy", Clock], ["Yoga, pilates, benessere", "plant", Sparkles]] },
-  { q: "Cosa ti pesa di più nella giornata?", a: [["Cali di energia", "energy", Zap], ["Pancia gonfia", "gut", Ban], ["Voglia di dolci", "med", Apple], ["Poco tempo per cucinare", "energy", Clock]] },
-];
-const DIET_TYPES = {
-  gut: { name: "Low-FODMAP Gentile", desc: "Il tuo intestino guida le scelte: pasti semplici, cibi a basso FODMAP e attenzione ai sintomi.", color: "#6EBF74", Ic: Leaf },
-  med: { name: "Mediterranea Bilanciata", desc: "Varietà ed equilibrio: cereali integrali, verdura, pesce e olio evo. Nessun estremo.", color: "#D4A55A", Ic: Apple },
-  protein: { name: "Proteica Attiva", desc: "Proteine ben distribuite e carboidrati intorno all'allenamento, per massa ed energia.", color: "#C56A4E", Ic: Dumbbell },
-  plant: { name: "Plant-Forward", desc: "A base vegetale con legumi, cereali e proteine leggere. Sostenibile e digeribile.", color: "#5E9E6A", Ic: Leaf },
-  energy: { name: "Energia Sostenuta", desc: "Pasti bilanciati e spuntini intelligenti per evitare cali di zuccheri e mantenere il focus.", color: "#C79A4C", Ic: Zap },
-};
-function Quiz({ onDone, onSkip, isDesktop }) {
-  const [step, setStep] = useState(0);
-  const [scores, setScores] = useState({});
-  const [result, setResult] = useState(null);
-  const pick = (key) => {
-    const ns = { ...scores, [key]: (scores[key] || 0) + 1 };
-    setScores(ns);
-    if (step < QUIZ.length - 1) { setStep(step + 1); return; }
-    const order = ["gut", "protein", "plant", "energy", "med"];
-    let best = order[0], bestv = -1;
-    order.forEach((k) => { if ((ns[k] || 0) > bestv) { bestv = ns[k] || 0; best = k; } });
-    setResult(best);
-  };
-  if (result) {
-    const d = DIET_TYPES[result];
-    return (
-      <OnbBg>
-        <div style={{ width: "100%", maxWidth: isDesktop ? 520 : 400, margin: "0 auto", padding: "0 24px", textAlign: "center" }}>
-          <div style={{ width: 74, height: 74, borderRadius: 22, background: d.color + "22", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}><d.Ic size={34} color={d.color} /></div>
-          <Eyebrow>Il tuo profilo alimentare</Eyebrow>
-          <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 36 : 29, fontWeight: 600, color: C.ink, margin: "2px 0 10px" }}>{d.name}</h1>
-          <p style={{ fontSize: 15, color: C.text, lineHeight: 1.5, maxWidth: 420, margin: "0 auto 24px" }}>{d.desc}</p>
-          <button onClick={() => onDone(result, d.name)} style={btnPrimary}>Entra in Quiete <ChevronRight size={19} /></button>
-          <button onClick={() => { setResult(null); setStep(0); setScores({}); }} style={{ ...btnGhost, marginTop: 14, width: "100%", justifyContent: "center" }}>Rifai il quiz</button>
-        </div>
-      </OnbBg>
-    );
-  }
-  const cur = QUIZ[step];
+function AssessmentResult({ f, result, isDesktop }) {
+  const { schema, arch, pasti } = result;
+  const arche = ARCHETIPI[arch.consigliato];
+  const macroRow = [
+    ["Proteine", schema.macro.proteine, schema.percentuali.proteine, C.prot],
+    ["Carboidrati", schema.macro.carboidrati, schema.percentuali.carboidrati, C.carb],
+    ["Grassi", schema.macro.grassi, schema.percentuali.grassi, C.fat],
+  ];
   return (
-    <OnbBg>
-      <div style={{ width: "100%", maxWidth: isDesktop ? 620 : 420, margin: "0 auto", padding: "0 24px" }}>
-        <div style={{ display: "flex", gap: 6, marginBottom: 22 }}>{QUIZ.map((_, i) => <span key={i} style={{ flex: 1, height: 5, borderRadius: 100, background: i <= step ? C.ink : C.line }} />)}</div>
-        <Eyebrow>Che tipo di dieta sei? · {step + 1}/{QUIZ.length}</Eyebrow>
-        <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 30 : 24, fontWeight: 600, color: C.ink, margin: "2px 0 18px", lineHeight: 1.15 }}>{cur.q}</h1>
-        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "1fr 1fr" : "1fr", gap: 12 }}>
-          {cur.a.map(([label, key, Ic], i) => (
-            <button key={i} onClick={() => pick(key)} style={{ display: "flex", alignItems: "center", gap: 13, background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: "15px 16px", cursor: "pointer", fontFamily: sans, textAlign: "left", boxShadow: SH }}>
-              <span style={{ width: 40, height: 40, borderRadius: 11, background: C.greenL, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><Ic size={19} color={C.ink} /></span>
-              <span style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{label}</span>
-            </button>
-          ))}
+    <>
+      <Eyebrow>Il tuo schema · 5/5</Eyebrow>
+      <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 30 : 25, fontWeight: 600, color: C.ink, margin: "2px 0 4px", lineHeight: 1.15 }}>Ciao {f.name}, ecco il tuo punto di partenza</h1>
+      <p style={{ fontSize: 13, color: C.muted, marginBottom: 16 }}>Calcolato sui tuoi dati con le linee guida ufficiali. È uno schema orientativo, non una dieta prescritta.</p>
+
+      {/* kcal + macro */}
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, boxShadow: SH, padding: 18, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+          <div><div style={{ fontSize: 12, color: C.muted }}>Fabbisogno giornaliero</div><div style={{ fontFamily: serif, fontSize: 34, fontWeight: 600, color: C.ink }}>{schema.kcalObiettivo} <span style={{ fontSize: 16, color: C.muted }}>kcal</span></div></div>
+          <div style={{ textAlign: "right", fontSize: 11.5, color: C.muted, lineHeight: 1.6 }}>
+            <div>Metabolismo basale <b style={{ color: C.text }}>{schema.bmr}</b></div>
+            <div>Con attività <b style={{ color: C.text }}>{schema.tdee}</b></div>
+            {schema.deltaKcal !== 0 && <div>Obiettivo <b style={{ color: schema.deltaKcal < 0 ? C.clay : C.ok }}>{schema.deltaKcal > 0 ? "+" : ""}{schema.deltaKcal}</b></div>}
+          </div>
         </div>
-        <button onClick={() => (step > 0 ? setStep(step - 1) : onSkip())} style={{ ...btnGhost, marginTop: 20 }}>{step > 0 ? "Indietro" : "Salta"}</button>
+        {macroRow.map(([l, g, pct, col]) => (
+          <div key={l} style={{ marginBottom: 9 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}><span style={{ color: C.text, fontWeight: 600 }}>{l}</span><span style={{ color: C.muted }}>{g} g · {pct}%</span></div>
+            <div style={{ height: 7, borderRadius: 100, background: C.line, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", background: col, borderRadius: 100 }} /></div>
+          </div>
+        ))}
       </div>
-    </OnbBg>
+
+      {/* archetipo consigliato */}
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, boxShadow: SH, padding: 18, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 100, background: arche.colore }} />
+          <div><div style={{ fontSize: 11, color: C.gold, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase" }}>Approccio consigliato</div><div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink }}>{arche.nome}</div></div>
+        </div>
+        <p style={{ fontSize: 13.5, color: C.text, lineHeight: 1.5 }}>{arche.descrizione}</p>
+      </div>
+
+      {/* ripartizione pasti */}
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, boxShadow: SH, padding: 18, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Come distribuire le calorie nella giornata</div>
+        {pasti.map((p) => (
+          <div key={p.pasto} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${C.line}` }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: C.text, textTransform: "capitalize" }}>{p.pasto}</span>
+            <span style={{ fontSize: 12.5, color: C.muted }}>{p.kcal} kcal · P{p.macro.proteine} C{p.macro.carboidrati} G{p.macro.grassi}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* note divulgative */}
+      {schema.note.length > 0 && (
+        <div style={{ background: C.goldBg, borderRadius: 16, padding: "13px 15px", marginBottom: 12 }}>
+          {schema.note.map((n, i) => <div key={i} style={{ fontSize: 12.5, color: C.text, lineHeight: 1.5, display: "flex", gap: 8, marginBottom: i < schema.note.length - 1 ? 8 : 0 }}><Info size={15} color={C.gold} style={{ flex: "0 0 auto", marginTop: 1 }} /><span>{n}</span></div>)}
+        </div>
+      )}
+
+      {/* CTA nutrizionista se ci sono condizioni cliniche */}
+      {arch.richiedeProfessionista.length > 0 && (
+        <div style={{ background: C.ink, borderRadius: 18, padding: 18, marginBottom: 12, color: "#fff" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}><ShieldCheck size={20} /><div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600 }}>Qui serve un professionista</div></div>
+          <p style={{ fontSize: 13, opacity: .92, lineHeight: 1.5 }}>Hai indicato condizioni che richiedono un piano personalizzato da un esperto. I nutrizionisti del team Quiete possono seguirti in sicurezza.</p>
+        </div>
+      )}
+
+      {/* disclaimer sempre */}
+      <div style={{ display: "flex", gap: 8, fontSize: 11.5, color: C.muted, lineHeight: 1.5, padding: "0 2px" }}>
+        <Info size={14} style={{ flex: "0 0 auto", marginTop: 1 }} />
+        <span>Quiete fornisce linee guida educative basate su LARN/SINU e CREA. Non sostituisce il parere di un medico, biologo nutrizionista o dietista.</span>
+      </div>
+    </>
   );
 }
 
 /* ============================================================
    OGGI
    ============================================================ */
-function Oggi({ plan, store, db, setSheet, go, toast, day }) {
+function Oggi({ plan, store, db, setSheet, go, toast, day, piano }) {
   const fasting = useFasting(store.lastMeal);
-  // today's logged nutrition (from diary)
   const today = new Date().toDateString();
   const logged = store.diary.filter((e) => new Date(e.ts).toDateString() === today && e.nutri);
   const tot = logged.reduce((a, e) => ({ kcal: a.kcal + (e.nutri.kcal || 0), p: a.p + (e.nutri.p || 0), c: a.c + (e.nutri.c || 0), f: a.f + (e.nutri.f || 0) }), { kcal: 0, p: 0, c: 0, f: 0 });
-  // plan-day target macros (for the bars)
-  const d = DAYS[day];
-  const planTot = sumMeal([...COLAZIONE.items, ...SP_AM.items, ...WEEK[d].pranzo, ...MERENDA.items, ...WEEK[d].cena, ...EVO.items]);
-  const kcalTarget = plan.kcal;
+  const profile = store.profile;
+  const kcalTarget = profile.kcalObiettivo || plan.kcal;
+  const planTot = profile.macro
+    ? { kcal: kcalTarget, p: profile.macro.proteine, c: profile.macro.carboidrati, f: profile.macro.grassi }
+    : sumMeal([...COLAZIONE.items, ...SP_AM.items, ...WEEK[DAYS[day]].pranzo, ...MERENDA.items, ...WEEK[DAYS[day]].cena, ...EVO.items]);
 
   return (
     <>
@@ -515,7 +718,7 @@ function Oggi({ plan, store, db, setSheet, go, toast, day }) {
           </div>
         </div>
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}`, fontSize: 12.5, color: C.muted, display: "flex", justifyContent: "space-between" }}>
-          <span>Piano di oggi ({d})</span><span style={{ fontWeight: 600, color: C.ink }}>≈ {r0(planTot.kcal)} kcal · P{r0(planTot.p)} C{r0(planTot.c)} G{r0(planTot.f)}</span>
+          <span>Obiettivo giornaliero</span><span style={{ fontWeight: 600, color: C.ink }}>≈ {r0(planTot.kcal)} kcal · P{r0(planTot.p)} C{r0(planTot.c)} G{r0(planTot.f)}</span>
         </div>
       </Card>
 
@@ -581,15 +784,24 @@ function Oggi({ plan, store, db, setSheet, go, toast, day }) {
 /* ============================================================
    PIANO
    ============================================================ */
-function Piano({ day, setDay, setSheet }) {
+function Piano({ day, setDay, setSheet, piano, store }) {
   const d = DAYS[day];
-  const meals = [COLAZIONE, SP_AM, { slot: "Pranzo", items: WEEK[d].pranzo }, MERENDA, { slot: "Cena", items: WEEK[d].cena }, EVO];
-  const dayTot = sumMeal(meals.flatMap((m) => m.items));
+  const profile = store?.profile || {};
+  const archNome = profile.archetipo ? (ARCHETIPI[profile.archetipo]?.nome || "Personalizzato") : "Piano";
+  let meals;
+  if (piano) {
+    const g = piano.giorni[day];
+    meals = [piano.colazione, piano.spuntino, { slot: "Pranzo", items: g.pranzo }, piano.merenda, { slot: "Cena", items: g.cena }, piano.olio];
+  } else {
+    meals = [COLAZIONE, SP_AM, { slot: "Pranzo", items: WEEK[d].pranzo }, MERENDA, { slot: "Cena", items: WEEK[d].cena }, EVO];
+  }
+  const dayTot = piano ? sumPianoItems(meals.flatMap((m) => m.items)) : sumMeal(meals.flatMap((m) => m.items));
   const training = WORKOUT[day].train;
+  const nota = piano ? piano.giorni[day].nota : DAYNOTE[d];
   return (
     <>
-      <Eyebrow>Fase 1 · Eliminazione</Eyebrow><H1>Piano della settimana</H1>
-      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 16px" }}>Tocca un alimento per le <b>sostituzioni</b>. Sotto ogni pasto trovi kcal e macro.</p>
+      <Eyebrow>{archNome}</Eyebrow><H1>Piano della settimana</H1>
+      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 16px" }}>Porzioni calcolate sul tuo profilo. Sotto ogni pasto trovi kcal e macro.</p>
       <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 12 }}>
         {DAYS.map((x, i) => <button key={x} onClick={() => setDay(i)} style={{ flex: "0 0 auto", border: `1px solid ${i === day ? C.ink : C.line}`, background: i === day ? C.ink : C.card, color: i === day ? "#fff" : C.muted, borderRadius: 100, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: sans }}>{x}</button>)}
       </div>
@@ -610,7 +822,7 @@ function Piano({ day, setDay, setSheet }) {
       )}
 
       {meals.map((m) => {
-        const mt = sumMeal(m.items);
+        const mt = piano ? sumPianoItems(m.items) : sumMeal(m.items);
         return (
           <Card key={m.slot} style={{ padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -631,7 +843,7 @@ function Piano({ day, setDay, setSheet }) {
       })}
 
       <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "12px 14px", fontSize: 12.5, color: "#3a4a41", display: "flex", gap: 9, marginBottom: 14 }}>
-        <Info size={16} color={C.gold} style={{ flex: "0 0 auto", marginTop: 1 }} /><span><b>{d}.</b> {DAYNOTE[d]}</span>
+        <Info size={16} color={C.gold} style={{ flex: "0 0 auto", marginTop: 1 }} /><span><b>{d}.</b> {nota}</span>
       </div>
       <Disc />
     </>
@@ -641,16 +853,24 @@ function Piano({ day, setDay, setSheet }) {
 /* ============================================================
    SPESA (shopping list from the plan)
    ============================================================ */
-function Spesa({ store, db, tf, setTf }) {
+function Spesa({ store, db, tf, setTf, piano }) {
   const rows = useMemo(() => {
     const mult = tf === "day" ? 1 / 7 : tf === "month" ? 4.345 : 1;
     const agg = {};
-    DAYS.forEach((d) => [...COLAZIONE.items, ...SP_AM.items, ...WEEK[d].pranzo, ...MERENDA.items, ...WEEK[d].cena, ...EVO.items].forEach((it) => {
-      if (!it.g) return; const key = it.n; agg[key] = (agg[key] || 0) + it.g;
-    }));
+    if (piano) {
+      piano.giorni.forEach((g) => {
+        [...piano.colazione.items, ...piano.spuntino.items, ...g.pranzo, ...piano.merenda.items, ...g.cena, ...piano.olio.items].forEach((it) => {
+          if (!it.g) return; const key = it.n; agg[key] = (agg[key] || 0) + it.g;
+        });
+      });
+    } else {
+      DAYS.forEach((d) => [...COLAZIONE.items, ...SP_AM.items, ...WEEK[d].pranzo, ...MERENDA.items, ...WEEK[d].cena, ...EVO.items].forEach((it) => {
+        if (!it.g) return; const key = it.n; agg[key] = (agg[key] || 0) + it.g;
+      }));
+    }
     const cat = (n) => { const k = nutriKey(n); if (["pollo", "merluzzo", "salmone", "gamberi", "tonno", "seppia", "vitello", "bresaola"].includes(k)) return "Carne & pesce"; if (["zucchine", "carote", "spinaci", "verdura"].includes(k)) return "Verdura"; if (["kiwi", "fragole", "frutta"].includes(k)) return "Frutta"; if (["yogurt", "uova", "formaggio"].includes(k)) return "Frigo"; return "Dispensa"; };
     return Object.entries(agg).map(([n, g]) => ({ n, g: g * mult, cat: cat(n) }));
-  }, [tf]);
+  }, [tf, piano]);
   const byCat = {}; rows.forEach((r) => (byCat[r.cat] = byCat[r.cat] || []).push(r));
   const fmt = (g) => g >= 1000 ? (g / 1000).toFixed(1) + " kg" : Math.round(g) + " g";
   return (
@@ -1193,7 +1413,7 @@ function useIsDesktop(bp = 1024) {
   return desktop;
 }
 
-function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast }) {
+function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano }) {
   const NAV = [
     ["oggi", Home, "Oggi"],
     ["piano", CalendarDays, "Piano"],
@@ -1244,9 +1464,9 @@ function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, 
         <div className="qk-content">
           <div className="qk-content-inner">
             <div className="qdash">
-              {tab === "oggi" && <Oggi {...{ plan, store, db, setSheet, go, toast, day }} />}
-              {tab === "piano" && <Piano {...{ day, setDay, setSheet }} />}
-              {tab === "spesa" && <Spesa {...{ store, db, tf, setTf }} />}
+              {tab === "oggi" && <Oggi {...{ plan, store, db, setSheet, go, toast, day, piano }} />}
+              {tab === "piano" && <Piano {...{ day, setDay, setSheet, piano, store }} />}
+              {tab === "spesa" && <Spesa {...{ store, db, tf, setTf, piano }} />}
               {tab === "allenamento" && <Allenamento />}
               {tab === "diario" && <Diario {...{ store, db, setSheet, toast }} />}
             </div>
