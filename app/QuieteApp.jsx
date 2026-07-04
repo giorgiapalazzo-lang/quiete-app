@@ -250,7 +250,44 @@ export default function App() {
   const plan = PLANS.find((p) => p.id === store.activePlan);
   const go = (t) => { setTab(t); window.scrollTo(0, 0); };
 
-  if (screen === "welcome") return <Welcome onStart={() => setScreen("app")} toast={toast} />;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("quiete_profile");
+      if (raw) {
+        const p = JSON.parse(raw);
+        setStore((s) => ({ ...s, profile: { ...s.profile, ...p } }));
+        if (p.dietType) setScreen("app");
+      }
+    } catch {}
+  }, []);
+
+  const saveProfile = (patch, next) => {
+    setStore((s) => {
+      const profile = { ...s.profile, ...patch };
+      try { localStorage.setItem("quiete_profile", JSON.stringify(profile)); } catch {}
+      return { ...s, profile };
+    });
+    if (next) setScreen(next);
+  };
+
+  if (screen === "welcome") return <Welcome onStart={() => setScreen("signup")} isDesktop={isDesktop} />;
+  if (screen === "signup")
+    return (
+      <Signup
+        initial={store.profile}
+        isDesktop={isDesktop}
+        onNext={(d) => saveProfile({ name: d.name, email: d.email, age: d.age, city: d.city, job: d.job }, "quiz")}
+        onSkip={() => setScreen("quiz")}
+      />
+    );
+  if (screen === "quiz")
+    return (
+      <Quiz
+        isDesktop={isDesktop}
+        onDone={(dietType, dietName) => saveProfile({ dietType, dietName }, "app")}
+        onSkip={() => setScreen("app")}
+      />
+    );
 
   if (isDesktop)
     return (
@@ -301,27 +338,150 @@ export default function App() {
 /* ============================================================
    WELCOME
    ============================================================ */
-function Welcome({ onStart, toast }) {
+const OnbBg = ({ children }) => (
+  <div style={{ minHeight: "100dvh", background: C.cream, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: sans, color: C.text, padding: "40px 0" }}>
+    {children}
+  </div>
+);
+const field = { width: "100%", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "13px 14px", fontSize: 15, fontFamily: sans, color: C.text, outline: "none" };
+const fieldLabel = { fontSize: 12.5, fontWeight: 600, color: C.muted, marginBottom: 6, display: "block" };
+
+function Welcome({ onStart, isDesktop }) {
+  const feats = [
+    ["Nutrienti sempre", "Kcal e macro di ogni pasto e del giorno.", Flame],
+    ["Foto con l'AI", "Fotografi il piatto, stima grammature e valori.", Wand2],
+    ["Piano & allenamento", "Diete, spesa e workout che si parlano.", Dumbbell],
+  ];
   return (
-    <Frame>
-      <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "40px 30px", background: C.cream }}>
-        <Seed size={78} />
-        <div style={{ fontFamily: serif, fontSize: 44, fontWeight: 600, color: C.ink, marginTop: 20 }}>Quiete</div>
-        <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: ".28em", color: C.gold, fontWeight: 600, marginTop: 4 }}>SALUTE INTESTINALE</div>
-        <p style={{ fontFamily: serif, fontSize: 21, color: C.ink, lineHeight: 1.35, maxWidth: 300, margin: "26px 0 6px", fontWeight: 500 }}>Il tuo piano, i tuoi macro, i tuoi progressi. In un posto solo.</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, margin: "28px 0", maxWidth: 320 }}>
-          {[["Nutrienti sempre", "Kcal e macro di ogni pasto e del giorno.", Flame], ["Foto con l'AI", "Fotografi il piatto, stima grammature e valori.", Wand2], ["Piano & allenamento", "Diete, spesa e workout che si parlano.", Dumbbell]].map(([t, s, Ic], i) => (
-            <div key={i} style={{ display: "flex", gap: 13, textAlign: "left" }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><Ic size={20} color={C.ink} /></div>
-              <div><div style={{ fontWeight: 600, fontSize: 14, color: C.text }}>{t}</div><div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{s}</div></div>
+    <OnbBg>
+      <div style={{ width: "100%", maxWidth: isDesktop ? 980 : 400, margin: "0 auto", display: isDesktop ? "grid" : "block", gridTemplateColumns: isDesktop ? "1.05fr 0.95fr" : undefined, gap: isDesktop ? 48 : 0, alignItems: "center", padding: isDesktop ? "0 40px" : "0 28px" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: isDesktop ? "flex-start" : "center", textAlign: isDesktop ? "left" : "center" }}>
+          <Seed size={isDesktop ? 64 : 78} />
+          <div style={{ fontFamily: serif, fontSize: isDesktop ? 52 : 44, fontWeight: 600, color: C.ink, marginTop: 18 }}>Quiete</div>
+          <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: ".28em", color: C.gold, fontWeight: 600, marginTop: 4 }}>SALUTE INTESTINALE</div>
+          <p style={{ fontFamily: serif, fontSize: isDesktop ? 26 : 21, color: C.ink, lineHeight: 1.35, maxWidth: 360, margin: "22px 0 8px", fontWeight: 500 }}>Il tuo piano, i tuoi macro, i tuoi progressi. In un posto solo.</p>
+          <button onClick={onStart} style={{ ...btnPrimary, width: isDesktop ? "auto" : "100%", padding: isDesktop ? "15px 30px" : "15px 22px", marginTop: 16 }}>Inizia il tuo percorso <ChevronRight size={19} /></button>
+          <div style={{ display: "flex", gap: 7, marginTop: 20 }}>{[0, 1, 2].map((i) => <span key={i} style={{ width: i === 0 ? 20 : 8, height: 8, borderRadius: 100, background: i === 0 ? C.ink : C.line }} />)}</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: isDesktop ? 0 : 28 }}>
+          {feats.map(([t, s, Ic], i) => (
+            <div key={i} style={{ display: "flex", gap: 14, textAlign: "left", background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, padding: 16, boxShadow: SH }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><Ic size={20} color={C.ink} /></div>
+              <div><div style={{ fontWeight: 600, fontSize: 14.5, color: C.text }}>{t}</div><div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{s}</div></div>
             </div>
           ))}
         </div>
-        <button onClick={onStart} style={btnPrimary}>Inizia il tuo percorso <ChevronRight size={19} /></button>
-        <div style={{ display: "flex", gap: 7, marginTop: 20 }}>{[0, 1, 2].map((i) => <span key={i} style={{ width: i === 0 ? 20 : 8, height: 8, borderRadius: 100, background: i === 0 ? C.ink : C.line }} />)}</div>
       </div>
-      {toast.node}
-    </Frame>
+    </OnbBg>
+  );
+}
+
+/* ============================================================
+   ISCRIZIONE
+   ============================================================ */
+function Signup({ initial, onNext, onSkip, isDesktop }) {
+  const [f, setF] = useState({ name: initial?.name && initial.name !== "Giorgia" ? initial.name : "", email: initial?.email || "", age: initial?.age || "", city: initial?.city || "", job: initial?.job || "" });
+  const [err, setErr] = useState("");
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+  const submit = () => {
+    if (!f.name.trim()) return setErr("Inserisci il tuo nome");
+    if (!/^\S+@\S+\.\S+$/.test(f.email)) return setErr("Inserisci un'email valida");
+    setErr("");
+    onNext(f);
+  };
+  const fields = [
+    ["name", "Nome", "text", "Come ti chiami", true],
+    ["email", "Email", "email", "tu@esempio.it", true],
+    ["age", "Età", "number", "es. 29", false],
+    ["city", "Città", "text", "es. Milano", false],
+    ["job", "Professione", "text", "es. Insegnante", false],
+  ];
+  return (
+    <OnbBg>
+      <div style={{ width: "100%", maxWidth: isDesktop ? 560 : 400, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}><Seed size={34} /><span style={{ fontFamily: serif, fontWeight: 600, fontSize: 22, color: C.ink }}>Quiete</span></div>
+        <Eyebrow>Passo 1 di 2</Eyebrow>
+        <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 32 : 26, fontWeight: 600, color: C.ink, margin: "2px 0 6px" }}>Crea il tuo profilo</h1>
+        <p style={{ fontSize: 13.5, color: C.muted, marginBottom: 20 }}>Bastano pochi dati per personalizzare piano e consigli.</p>
+        <div style={{ display: isDesktop ? "grid" : "block", gridTemplateColumns: isDesktop ? "1fr 1fr" : undefined, gap: 14 }}>
+          {fields.map(([k, label, type, ph, req]) => (
+            <div key={k} style={{ marginBottom: isDesktop ? 0 : 14, gridColumn: isDesktop && (k === "name" || k === "email" || k === "job") ? "1 / -1" : undefined }}>
+              <label style={fieldLabel}>{label}{req && <span style={{ color: C.clay }}> *</span>}</label>
+              <input value={f[k]} onChange={set(k)} type={type} placeholder={ph} inputMode={k === "age" ? "numeric" : undefined} style={field} />
+            </div>
+          ))}
+        </div>
+        {err && <div style={{ color: C.clay, fontSize: 13, marginTop: 12, fontWeight: 600 }}>{err}</div>}
+        <button onClick={submit} style={{ ...btnPrimary, marginTop: 22 }}>Continua <ChevronRight size={19} /></button>
+        <button onClick={onSkip} style={{ ...btnGhost, marginTop: 14, width: "100%", justifyContent: "center" }}>Salta per ora</button>
+      </div>
+    </OnbBg>
+  );
+}
+
+/* ============================================================
+   QUIZ — Che tipo di dieta sei?
+   ============================================================ */
+const QUIZ = [
+  { q: "Qual è il tuo obiettivo principale?", a: [["Sentirmi leggera, meno gonfiore", "gut", Leaf], ["Mangiare sano ed equilibrato", "med", Apple], ["Sostenere allenamento e massa", "protein", Dumbbell], ["Più energia e concentrazione", "energy", Zap]] },
+  { q: "Come va la tua digestione?", a: [["Spesso gonfiore o fastidi", "gut", Ban], ["Tutto sommato bene", "med", ShieldCheck], ["Ho di nuovo fame poco dopo", "energy", Clock], ["Dipende molto dai cibi", "gut", Info]] },
+  { q: "Che rapporto hai con carne e pesce?", a: [["Ne mangio volentieri", "protein", Fish], ["Poca, preferisco vegetale", "plant", Leaf], ["Equilibrato", "med", UtensilsCrossed], ["Attenta alle porzioni", "gut", Apple]] },
+  { q: "Quanto ti muovi?", a: [["Alleno spesso (3+ a settimana)", "protein", Dumbbell], ["Cammino, attività leggera", "med", Footprints], ["Poco, vita sedentaria", "energy", Clock], ["Yoga, pilates, benessere", "plant", Sparkles]] },
+  { q: "Cosa ti pesa di più nella giornata?", a: [["Cali di energia", "energy", Zap], ["Pancia gonfia", "gut", Ban], ["Voglia di dolci", "med", Apple], ["Poco tempo per cucinare", "energy", Clock]] },
+];
+const DIET_TYPES = {
+  gut: { name: "Low-FODMAP Gentile", desc: "Il tuo intestino guida le scelte: pasti semplici, cibi a basso FODMAP e attenzione ai sintomi.", color: "#6EBF74", Ic: Leaf },
+  med: { name: "Mediterranea Bilanciata", desc: "Varietà ed equilibrio: cereali integrali, verdura, pesce e olio evo. Nessun estremo.", color: "#D4A55A", Ic: Apple },
+  protein: { name: "Proteica Attiva", desc: "Proteine ben distribuite e carboidrati intorno all'allenamento, per massa ed energia.", color: "#C56A4E", Ic: Dumbbell },
+  plant: { name: "Plant-Forward", desc: "A base vegetale con legumi, cereali e proteine leggere. Sostenibile e digeribile.", color: "#5E9E6A", Ic: Leaf },
+  energy: { name: "Energia Sostenuta", desc: "Pasti bilanciati e spuntini intelligenti per evitare cali di zuccheri e mantenere il focus.", color: "#C79A4C", Ic: Zap },
+};
+function Quiz({ onDone, onSkip, isDesktop }) {
+  const [step, setStep] = useState(0);
+  const [scores, setScores] = useState({});
+  const [result, setResult] = useState(null);
+  const pick = (key) => {
+    const ns = { ...scores, [key]: (scores[key] || 0) + 1 };
+    setScores(ns);
+    if (step < QUIZ.length - 1) { setStep(step + 1); return; }
+    const order = ["gut", "protein", "plant", "energy", "med"];
+    let best = order[0], bestv = -1;
+    order.forEach((k) => { if ((ns[k] || 0) > bestv) { bestv = ns[k] || 0; best = k; } });
+    setResult(best);
+  };
+  if (result) {
+    const d = DIET_TYPES[result];
+    return (
+      <OnbBg>
+        <div style={{ width: "100%", maxWidth: isDesktop ? 520 : 400, margin: "0 auto", padding: "0 24px", textAlign: "center" }}>
+          <div style={{ width: 74, height: 74, borderRadius: 22, background: d.color + "22", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}><d.Ic size={34} color={d.color} /></div>
+          <Eyebrow>Il tuo profilo alimentare</Eyebrow>
+          <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 36 : 29, fontWeight: 600, color: C.ink, margin: "2px 0 10px" }}>{d.name}</h1>
+          <p style={{ fontSize: 15, color: C.text, lineHeight: 1.5, maxWidth: 420, margin: "0 auto 24px" }}>{d.desc}</p>
+          <button onClick={() => onDone(result, d.name)} style={btnPrimary}>Entra in Quiete <ChevronRight size={19} /></button>
+          <button onClick={() => { setResult(null); setStep(0); setScores({}); }} style={{ ...btnGhost, marginTop: 14, width: "100%", justifyContent: "center" }}>Rifai il quiz</button>
+        </div>
+      </OnbBg>
+    );
+  }
+  const cur = QUIZ[step];
+  return (
+    <OnbBg>
+      <div style={{ width: "100%", maxWidth: isDesktop ? 620 : 420, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 22 }}>{QUIZ.map((_, i) => <span key={i} style={{ flex: 1, height: 5, borderRadius: 100, background: i <= step ? C.ink : C.line }} />)}</div>
+        <Eyebrow>Che tipo di dieta sei? · {step + 1}/{QUIZ.length}</Eyebrow>
+        <h1 style={{ fontFamily: serif, fontSize: isDesktop ? 30 : 24, fontWeight: 600, color: C.ink, margin: "2px 0 18px", lineHeight: 1.15 }}>{cur.q}</h1>
+        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "1fr 1fr" : "1fr", gap: 12 }}>
+          {cur.a.map(([label, key, Ic], i) => (
+            <button key={i} onClick={() => pick(key)} style={{ display: "flex", alignItems: "center", gap: 13, background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: "15px 16px", cursor: "pointer", fontFamily: sans, textAlign: "left", boxShadow: SH }}>
+              <span style={{ width: 40, height: 40, borderRadius: 11, background: C.greenL, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><Ic size={19} color={C.ink} /></span>
+              <span style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{label}</span>
+            </button>
+          ))}
+        </div>
+        <button onClick={() => (step > 0 ? setStep(step - 1) : onSkip())} style={{ ...btnGhost, marginTop: 20 }}>{step > 0 ? "Indietro" : "Salta"}</button>
+      </div>
+    </OnbBg>
   );
 }
 
