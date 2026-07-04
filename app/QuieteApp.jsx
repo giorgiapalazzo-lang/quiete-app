@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Home, CalendarDays, Camera, ChevronRight, ChevronLeft, X, Plus, Check,
   Flame, Droplet, Footprints, Sparkles, Clock, Pill as PillIcon, Ban, ShieldCheck, Info,
@@ -246,10 +246,18 @@ export default function App() {
   const [day, setDay] = useState(0);
   const [foodMode, setFoodMode] = useState("yes");
   const [tf, setTf] = useState("week");
+  const isDesktop = useIsDesktop();
   const plan = PLANS.find((p) => p.id === store.activePlan);
   const go = (t) => { setTab(t); window.scrollTo(0, 0); };
 
   if (screen === "welcome") return <Welcome onStart={() => setScreen("app")} toast={toast} />;
+
+  if (isDesktop)
+    return (
+      <DesktopShell
+        {...{ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast }}
+      />
+    );
 
   return (
     <Frame>
@@ -1005,6 +1013,88 @@ function Frame({ children }) {
       <div style={{ fontFamily: sans, background: "#EDE7DB", minHeight: "100dvh", color: C.text }}>
         <div style={{ maxWidth: 440, margin: "0 auto", background: C.cream, minHeight: "100dvh", position: "relative" }}>{children}</div>
       </div>
+    </>
+  );
+}
+
+/* ============================================================
+   DESKTOP — shell dashboard (sidebar + contenuto multi-colonna).
+   Attiva da >= 1024px; sotto resta la UI mobile (Frame).
+   ============================================================ */
+function useIsDesktop(bp = 1024) {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width:${bp}px)`);
+    const sync = () => setDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [bp]);
+  return desktop;
+}
+
+function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast }) {
+  const NAV = [
+    ["oggi", Home, "Oggi"],
+    ["piano", CalendarDays, "Piano"],
+    ["spesa", ShoppingCart, "Spesa"],
+    ["allenamento", Dumbbell, "Allenamento"],
+    ["diario", Camera, "Diario"],
+  ];
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+        *{box-sizing:border-box;}
+        @keyframes qslideup{from{transform:translateY(100%)}to{transform:none}}
+        @keyframes qspin{to{transform:rotate(360deg)}}
+        .qspin{animation:qspin 1s linear infinite;}
+        textarea:focus,input:focus{outline:2px solid ${C.ink};border-color:${C.ink};}
+      `}</style>
+      <div className="qk-desktop">
+        <aside className="qk-sidebar">
+          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "6px 8px 18px" }}>
+            <Seed size={34} />
+            <span style={{ fontFamily: serif, fontWeight: 600, fontSize: 23, color: C.ink }}>Quiete</span>
+          </div>
+          <button
+            onClick={() => setSheet({ type: "plans" })}
+            style={{ display: "flex", alignItems: "center", gap: 9, background: C.cream, border: `1px solid ${C.line}`, borderRadius: 13, padding: "10px 12px", cursor: "pointer", fontFamily: sans, marginBottom: 12, textAlign: "left" }}
+          >
+            <span style={{ width: 10, height: 10, borderRadius: 100, background: plan.color, flex: "0 0 auto" }} />
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text }}>{plan.name}</span>
+            <ChevronRight size={15} color={C.muted} />
+          </button>
+          <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {NAV.map(([k, Ic, l]) => (
+              <button key={k} className={"qk-navitem" + (tab === k ? " active" : "")} onClick={() => go(k)}>
+                <Ic size={19} /> {l}
+              </button>
+            ))}
+          </nav>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => setSheet({ type: "profile" })} className="qk-navitem" style={{ gap: 11 }}>
+            <span style={{ width: 30, height: 30, borderRadius: 100, background: C.ink, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: serif, fontWeight: 600, fontSize: 14, flex: "0 0 auto" }}>
+              {store.profile.name[0]}
+            </span>
+            {store.profile.name}
+          </button>
+        </aside>
+
+        <div className="qk-content">
+          <div className="qk-content-inner">
+            <div className="qdash">
+              {tab === "oggi" && <Oggi {...{ plan, store, db, setSheet, go, toast, day }} />}
+              {tab === "piano" && <Piano {...{ day, setDay, setSheet }} />}
+              {tab === "spesa" && <Spesa {...{ store, db, tf, setTf }} />}
+              {tab === "allenamento" && <Allenamento />}
+              {tab === "diario" && <Diario {...{ store, db, setSheet, toast }} />}
+            </div>
+          </div>
+        </div>
+      </div>
+      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet }} />}
+      {toast.node}
     </>
   );
 }

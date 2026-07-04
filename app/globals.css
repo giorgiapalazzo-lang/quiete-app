@@ -16,3 +16,87 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* ============================================================
+   Layout desktop — dashboard multi-colonna (>= 1024px).
+   Il mobile resta identico: queste regole valgono solo da 1024px.
+   ============================================================ */
+.qk-desktop {
+  display: flex;
+  min-height: 100dvh;
+  background: #ede7db;
+  font-family: "Inter", system-ui, sans-serif;
+  color: #28352e;
+}
+.qk-sidebar {
+  width: 250px;
+  flex: 0 0 250px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100dvh;
+  background: #fffdf9;
+  border-right: 1px solid #e9e1d3;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 16px;
+  gap: 6px;
+}
+.qk-content {
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+}
+.qk-content-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 34px 40px 60px;
+}
+.qk-navitem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 13px;
+  border: none;
+  border-radius: 13px;
+  background: transparent;
+  color: #7c8a80;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.qk-navitem:hover {
+  background: #f2ede3;
+  color: #28352e;
+}
+.qk-navitem.active {
+  background: #e7efe6;
+  color: #1e4b3a;
+}
+
+/* Masonry a colonne: l'intestazione (eyebrow + h1) spanna a tutta larghezza,
+   poi le card fluiscono in colonne. */
+.qdash {
+  column-gap: 22px;
+}
+.qdash > * {
+  break-inside: avoid;
+}
+.qdash > :nth-child(1),
+.qdash > :nth-child(2) {
+  column-span: all;
+}
+@media (min-width: 1024px) {
+  .qdash {
+    column-count: 2;
+  }
+}
+@media (min-width: 1560px) {
+  .qdash {
+    column-count: 3;
+  }
+}
