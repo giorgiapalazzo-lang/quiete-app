@@ -192,6 +192,37 @@ const RECIPES = [
   { n: "Quinoa, salmone e cetriolo", t: "Pranzo · 20 min", ill: "bowl" },
   { n: "Frittata di zucchine e insalata", t: "Cena · 18 min", ill: "eggs" },
 ];
+// Consigli / coaching — frasi che ruotano nell'app ("Il consiglio di oggi").
+const CONSIGLI = [
+  { c: "movimento", t: "Una camminata di 10 minuti dopo i pasti riduce il gonfiore e smorza il picco glicemico." },
+  { c: "movimento", t: "Non serve strafare: 20 minuti a corpo libero con costanza battono un'ora saltuaria." },
+  { c: "movimento", t: "Muoverti anche solo un po' ogni giorno vale più di un allenamento intenso una volta a settimana." },
+  { c: "movimento", t: "La corsa a intervalli leggera è ottima per la pancia: brucia e non stressa l'intestino." },
+  { c: "acqua", t: "Bevi un bicchiere d'acqua appena sveglia: aiuta la regolarità intestinale." },
+  { c: "acqua", t: "Punta a 1,5–2 litri al giorno: spesso la ritenzione e il gonfiore calano solo bevendo di più." },
+  { c: "acqua", t: "Bere lontano dai pasti aiuta la digestione più che bere tanto durante." },
+  { c: "intestino", t: "Mangia lentamente e mastica bene: metà del gonfiore nasce dall'aria inghiottita di fretta." },
+  { c: "intestino", t: "Pasti regolari e agli stessi orari abituano l'intestino e riducono i fastidi." },
+  { c: "intestino", t: "Le torsioni del busto e il cat-cow favoriscono il transito: falli quando ti senti gonfia." },
+  { c: "intestino", t: "Introduci la fibra in modo graduale: troppa e tutta insieme peggiora il gonfiore." },
+  { c: "cibo", t: "Metà piatto di verdura, un quarto di proteine, un quarto di carboidrati: la regola più semplice." },
+  { c: "cibo", t: "20–40 g di proteine per pasto tengono la sazietà e proteggono la massa muscolare." },
+  { c: "cibo", t: "Non saltare i pasti per 'recuperare': rallenta il metabolismo e aumenta la fame dopo." },
+  { c: "cibo", t: "Usa le sostituzioni: cambiare alimento a parità di macro rende la dieta sostenibile nel tempo." },
+  { c: "mente", t: "La costanza batte la perfezione: un pasto storto non rovina niente, ciò che conta è la media." },
+  { c: "mente", t: "Festeggia i progressi non solo sulla bilancia: energia, sonno e pancia sgonfia contano di più." },
+  { c: "mente", t: "Lo stress gonfia davvero la pancia: 5 minuti di respirazione diaframmatica al giorno aiutano." },
+  { c: "sonno", t: "Dormire 7–8 ore regola fame e ormoni: poco sonno fa venire più voglia di zuccheri." },
+  { c: "sonno", t: "Cena presto e leggera: dai tempo all'intestino di lavorare prima di coricarti." },
+];
+const CAT_CONSIGLIO = {
+  movimento: { label: "Movimento", Ic: Footprints, bg: "#E7EFE6", fg: "#1E4B3A" },
+  acqua: { label: "Idratazione", Ic: Droplet, bg: "#E4EDEE", fg: "#3A6B73" },
+  intestino: { label: "Intestino", Ic: Activity, bg: "#F6E4DC", fg: "#A24E37" },
+  cibo: { label: "Alimentazione", Ic: Leaf, bg: "#EDF3E9", fg: "#4E7A3E" },
+  mente: { label: "Testa", Ic: Sparkles, bg: "#F3EBDA", fg: "#96702A" },
+  sonno: { label: "Riposo", Ic: Clock, bg: "#E8E6F0", fg: "#5B537A" },
+};
 const SYMPTOMS = [{ k: "gonfiore", label: "Gonfiore" }, { k: "dolore", label: "Dolore addominale" }, { k: "flatulenza", label: "Flatulenza" }, { k: "regolarita", label: "Regolarità intestinale" }];
 const LEVELS = ["Nessuno", "Lieve", "Moderato", "Severo"];
 
@@ -1046,6 +1077,25 @@ function SignupScreen({ email: initialEmail, isDesktop, onBack, onSkip, onSucces
 /* ============================================================
    OGGI
    ============================================================ */
+function ConsiglioCard() {
+  const [extra, setExtra] = useState(0);
+  const base = Math.floor(Date.now() / 864e5);
+  const c = CONSIGLI[((base + extra) % CONSIGLI.length + CONSIGLI.length) % CONSIGLI.length];
+  const m = CAT_CONSIGLIO[c.c] || CAT_CONSIGLIO.cibo;
+  return (
+    <Card style={{ padding: 16 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: m.bg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><m.Ic size={20} color={m.fg} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: m.fg, marginBottom: 3 }}>Il consiglio di oggi · {m.label}</div>
+          <div style={{ fontSize: 14, color: C.text, lineHeight: 1.5 }}>{c.t}</div>
+        </div>
+      </div>
+      <button onClick={() => setExtra((e) => e + 1)} style={{ ...btnGhost, marginTop: 12 }}><RefreshCw size={14} /> Un altro</button>
+    </Card>
+  );
+}
+
 function Oggi({ plan, store, db, setSheet, go, toast, day, piano, isDesktop }) {
   const fasting = useFasting(store.lastMeal);
   const today = new Date().toDateString();
@@ -1146,7 +1196,7 @@ function Oggi({ plan, store, db, setSheet, go, toast, day, piano, isDesktop }) {
         <Eyebrow>Oggi</Eyebrow><H1>La tua giornata</H1>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.55fr) minmax(0,1fr)", gap: 20, alignItems: "start", marginTop: 4 }}>
           <div>{nutritionCard}{aiBtn}{registerCard}{hubGrid}</div>
-          <div>{fastingCard}{suppsCard}</div>
+          <div><ConsiglioCard />{fastingCard}{suppsCard}</div>
         </div>
         <Disc />
       </>
@@ -1157,6 +1207,7 @@ function Oggi({ plan, store, db, setSheet, go, toast, day, piano, isDesktop }) {
     <>
       <Eyebrow>Oggi</Eyebrow><H1>La tua giornata</H1>
       {nutritionCard}
+      <ConsiglioCard />
       {aiBtn}
       {fastingCard}
       {registerCard}
