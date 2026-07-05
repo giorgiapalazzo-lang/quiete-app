@@ -45,7 +45,9 @@ export function generaPiano(input: {
   macro: Macro;
   condizioni: Condizione[];
   archetipo: ArchetipoId;
+  variante?: number; // ruota gli alimenti per variare il piano ("Varia")
 }): PianoGenerato {
+  const V = input.variante ?? 0;
   const cond = new Set(input.condizioni);
   const foods = filtraAlimenti({
     senzaGlutine: cond.has("celiachia"),
@@ -94,41 +96,43 @@ export function generaPiano(input: {
     colazioneItems.push({ n: avena.nome, g: 40, id: avena.id });
   }
   if (frutta.length > 0) {
-    colazioneItems.push({ n: frutta[0].nome, g: 150, id: frutta[0].id });
+    const cf = frutta[V % frutta.length];
+    colazioneItems.push({ n: cf.nome, g: 150, id: cf.id });
   }
   if (fruttaSecca.length > 0) {
-    colazioneItems.push({ n: fruttaSecca[0].nome, g: 15, id: fruttaSecca[0].id });
+    const cn = fruttaSecca[V % fruttaSecca.length];
+    colazioneItems.push({ n: cn.nome, g: 15, id: cn.id });
   }
-  // When items are few (e.g. IBS+lactose filters yogurt+avena), add cereali or legumi
+  // When items are few (e.g. IBS+lactose filters yogurt+avena), add cereali o uova
   if (!yogurt && !avena) {
-    const riso = cereali.find((c) => c.id === "riso_basmati") || cereali[0];
-    if (riso) {
-      const g = porzionePerMacro(riso, "carb", kcalColazione * 0.35 / 4);
-      colazioneItems.push({ n: riso.nome, g, id: riso.id });
+    const uovaCol = protAll.find((f) => f.categoria === "uova");
+    if (uovaCol && V % 2 === 1) {
+      colazioneItems.unshift({ n: uovaCol.nome, g: uovaCol.porzioneG, id: uovaCol.id });
+    } else {
+      const riso = cereali.find((c) => c.id === "riso_basmati") || cereali[0];
+      if (riso) {
+        const g = porzionePerMacro(riso, "carb", kcalColazione * 0.35 / 4);
+        colazioneItems.push({ n: riso.nome, g, id: riso.id });
+      }
     }
-    if (fruttaSecca.length > 0) {
-      const fs = fruttaSecca[0];
-      const existing = colazioneItems.find((it) => it.id === fs.id);
-      if (existing) existing.g = 25;
-    }
+    const fsIdx = colazioneItems.findIndex((it) => fruttaSecca.some((x) => x.id === it.id));
+    if (fsIdx >= 0) colazioneItems[fsIdx].g = 25;
   }
 
   const colazione: SlotPiano = { slot: "Colazione", items: colazioneItems };
   const spuntino: SlotPiano = {
     slot: "Spuntino",
     items: fruttaSecca.length > 0
-      ? [{ n: fruttaSecca[0].nome, g: 15, id: fruttaSecca[0].id }]
+      ? [{ n: fruttaSecca[(V + 1) % fruttaSecca.length].nome, g: 15, id: fruttaSecca[(V + 1) % fruttaSecca.length].id }]
       : frutta.length > 0
-        ? [{ n: frutta[0].nome, g: 100, id: frutta[0].id }]
+        ? [{ n: frutta[(V + 1) % frutta.length].nome, g: 100, id: frutta[(V + 1) % frutta.length].id }]
         : [],
   };
   const merenda: SlotPiano = {
     slot: "Merenda",
-    items: frutta.length > 1
-      ? [{ n: frutta[1].nome, g: 150, id: frutta[1].id }]
-      : frutta.length > 0
-        ? [{ n: frutta[0].nome, g: 150, id: frutta[0].id }]
-        : [],
+    items: frutta.length > 0
+      ? [{ n: frutta[(V + 2) % frutta.length].nome, g: 150, id: frutta[(V + 2) % frutta.length].id }]
+      : [],
   };
   const olioSlot: SlotPiano = {
     slot: "Durante la giornata",
@@ -149,10 +153,10 @@ export function generaPiano(input: {
   const giorni: GiornoPiano[] = [];
 
   for (let d = 0; d < 7; d++) {
-    // Pranzo: carb + protein + verdura
-    const carbPranzoFood = cereali.length > 0 ? pick(cereali, d) : null;
-    const protPranzoFood = protAll.length > 0 ? pick(protAll, d) : null;
-    const verdPranzo = verdure.length > 0 ? pick(verdure, d) : null;
+    // Pranzo: carb + protein + verdura (offset con la variante V)
+    const carbPranzoFood = cereali.length > 0 ? pick(cereali, d, V) : null;
+    const protPranzoFood = protAll.length > 0 ? pick(protAll, d, V) : null;
+    const verdPranzo = verdure.length > 0 ? pick(verdure, d, V) : null;
 
     const pranzoItems: ItemPiano[] = [];
     if (carbPranzoFood) {
@@ -169,10 +173,10 @@ export function generaPiano(input: {
 
     // Cena: protein (diversa) + verdura + carb più leggero
     const protCenaFood = protAll.length > 1
-      ? pick(protAll, d, Math.floor(protAll.length / 2))
+      ? pick(protAll, d, Math.floor(protAll.length / 2) + V)
       : protPranzoFood;
     const verdCena = verdure.length > 1
-      ? pick(verdure, d, 3)
+      ? pick(verdure, d, 3 + V)
       : verdPranzo;
 
     const cenaItems: ItemPiano[] = [];
@@ -186,7 +190,7 @@ export function generaPiano(input: {
     // Smaller carb at dinner (patate or bread)
     const patate = foods.find((f) => f.id === "patate");
     const carbCenaFood = d % 2 === 0 && patate ? patate :
-      cereali.length > 1 ? pick(cereali, d, 2) : null;
+      cereali.length > 1 ? pick(cereali, d, 2 + V) : null;
     if (carbCenaFood && carbCena > 20) {
       const g = porzionePerMacro(carbCenaFood, "carb", carbCena * 0.75);
       cenaItems.push({ n: carbCenaFood.nome, g, id: carbCenaFood.id });

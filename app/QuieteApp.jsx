@@ -11,7 +11,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 import { calcolaSchema, ripartisciPasti, distribuisciMacro } from "../lib/nutrition/engine";
 import { ARCHETIPI, suggerisciArchetipo } from "../lib/nutrition/archetipi";
 import { generaPiano } from "../lib/nutrition/piano";
-import { ALIMENTI, ALIMENTI_BY_ID, sostituti, diStagione, ruoloAlimento, nutriPerGrammi } from "../lib/nutrition/alimenti";
+import { ALIMENTI, ALIMENTI_BY_ID, sostituti, diStagione, ruoloAlimento, nutriPerGrammi, filtraAlimenti } from "../lib/nutrition/alimenti";
 import { signUp, signIn, signOut, onAuthStateChange, getUser } from "../lib/supabase/auth";
 import { getProfile, upsertProfile } from "../lib/supabase/profile";
 import { isSupabaseConfigured } from "../lib/supabase/client";
@@ -1119,20 +1119,28 @@ function Piano({ day, setDay, setSheet, piano, store }) {
   const d = DAYS[day];
   const profile = store?.profile || {};
   const archNome = profile.archetipo ? (ARCHETIPI[profile.archetipo]?.nome || "Personalizzato") : "Piano";
+  const [vari, setVari] = useState(0);
+  const pianoV = useMemo(() => {
+    if (!profile.assessmentDone || !profile.macro || !Number.isFinite(profile.kcalObiettivo)) return piano;
+    try { return generaPiano({ kcalObiettivo: profile.kcalObiettivo, macro: profile.macro, condizioni: profile.condizioni || [], archetipo: profile.archetipo || "mediterranea", variante: vari }); } catch { return piano; }
+  }, [profile, vari, piano]);
   let meals;
-  if (piano) {
-    const g = piano.giorni[day];
-    meals = [piano.colazione, piano.spuntino, { slot: "Pranzo", items: g.pranzo }, piano.merenda, { slot: "Cena", items: g.cena }, piano.olio];
+  if (pianoV) {
+    const g = pianoV.giorni[day];
+    meals = [pianoV.colazione, pianoV.spuntino, { slot: "Pranzo", items: g.pranzo }, pianoV.merenda, { slot: "Cena", items: g.cena }, pianoV.olio];
   } else {
     meals = [COLAZIONE, SP_AM, { slot: "Pranzo", items: WEEK[d].pranzo }, MERENDA, { slot: "Cena", items: WEEK[d].cena }, EVO];
   }
-  const dayTot = piano ? sumPianoItems(meals.flatMap((m) => m.items)) : sumMeal(meals.flatMap((m) => m.items));
+  const dayTot = pianoV ? sumPianoItems(meals.flatMap((m) => m.items)) : sumMeal(meals.flatMap((m) => m.items));
   const training = WORKOUT[day].train;
-  const nota = piano ? piano.giorni[day].nota : DAYNOTE[d];
+  const nota = pianoV ? pianoV.giorni[day].nota : DAYNOTE[d];
   return (
     <>
       <Eyebrow>{archNome}</Eyebrow><H1>Piano della settimana</H1>
-      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 16px" }}>Porzioni calcolate sul tuo profilo. Sotto ogni pasto trovi kcal e macro.</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "0 0 14px" }}>
+        <p style={{ color: C.muted, fontSize: 13.5, margin: 0 }}>Porzioni sul tuo profilo. Tocca un cibo per le sostituzioni.</p>
+        {pianoV && <button onClick={() => setVari((v) => v + 1)} style={{ ...btnGhost, marginTop: 0, flex: "0 0 auto", whiteSpace: "nowrap" }}><RefreshCw size={15} /> Varia</button>}
+      </div>
       <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 12 }}>
         {DAYS.map((x, i) => <button key={x} onClick={() => setDay(i)} style={{ flex: "0 0 auto", border: `1px solid ${i === day ? C.ink : C.line}`, background: i === day ? C.ink : C.card, color: i === day ? "#fff" : C.muted, borderRadius: 100, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: sans }}>{x}</button>)}
       </div>
@@ -1153,7 +1161,7 @@ function Piano({ day, setDay, setSheet, piano, store }) {
       )}
 
       {meals.map((m) => {
-        const mt = piano ? sumPianoItems(m.items) : sumMeal(m.items);
+        const mt = pianoV ? sumPianoItems(m.items) : sumMeal(m.items);
         return (
           <Card key={m.slot} style={{ padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -1556,28 +1564,77 @@ function SostituzioniSheet({ ctx, data }) {
 }
 
 function EntrySheet({ data, ctx, close }) {
-  const [food, setFood] = useState("");
+  const cond = ctx.store.profile.condizioni || [];
+  const restr = { soloFodmapBasso: cond.includes("ibs"), senzaGlutine: cond.includes("celiachia"), senzaLattosio: cond.includes("intolleranza_lattosio"), vegetariano: cond.includes("vegetariano"), vegano: cond.includes("vegano") };
+  const allowed = filtraAlimenti(restr);
+  const [items, setItems] = useState([]); // [{id, g}]
+  const [cat, setCat] = useState("proteine");
+  const [q, setQ] = useState("");
   const [note, setNote] = useState("");
-  const [photo, setPhoto] = useState(null);
+  const [freeText, setFreeText] = useState("");
   const [sym, setSym] = useState({ gonfiore: 0, dolore: 0, flatulenza: 0, regolarita: 0 });
-  const fileRef = useRef();
-  const onFile = (e) => { const f = e.target.files[0]; if (f) setPhoto(URL.createObjectURL(f)); };
-  const nutri = useMemo(() => food ? nutriFor(food, 100) : null, [food]);
+
+  const lista = q.trim().length >= 2
+    ? allowed.filter((a) => a.nome.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 30)
+    : allowed.filter((a) => ruoloAlimento(a) === cat);
+  const tot = items.reduce((acc, it) => { const n = nutriPerGrammi(it.id, it.g) || { kcal: 0, proteine: 0, carboidrati: 0, grassi: 0 }; return { kcal: acc.kcal + n.kcal, p: acc.p + n.proteine, c: acc.c + n.carboidrati, f: acc.f + n.grassi }; }, { kcal: 0, p: 0, c: 0, f: 0 });
+
+  const add = (a) => setItems((s) => (s.some((it) => it.id === a.id) ? s : [...s, { id: a.id, g: a.porzioneG }]));
+  const setG = (i, v) => setItems((s) => s.map((it, idx) => (idx === i ? { ...it, g: Math.max(0, +String(v).replace(/[^0-9]/g, "")) } : it)));
+  const rm = (i) => setItems((s) => s.filter((_, idx) => idx !== i));
+
   const save = async () => {
-    if (!food && !photo) { ctx.toast.show("Aggiungi cibo o foto"); return; }
-    await ctx.db.diary.add({ ts: Date.now(), meal: data.meal, food, note, photo, nutri: food ? nutriFor(food, 150) : null, ...sym });
+    if (!items.length && !freeText.trim()) { ctx.toast.show("Aggiungi almeno un alimento"); return; }
+    const food = items.length ? items.map((it) => `${ALIMENTI_BY_ID[it.id].nome} ${it.g}g`).join(" · ") : freeText.trim();
+    const nutri = items.length
+      ? { kcal: r0(tot.kcal), p: Math.round(tot.p * 10) / 10, c: Math.round(tot.c * 10) / 10, f: Math.round(tot.f * 10) / 10 }
+      : (freeText.trim() ? nutriFor(freeText, 150) : null);
+    await ctx.db.diary.add({ ts: Date.now(), meal: data.meal, food, note, photo: null, nutri, ...sym });
     ctx.toast.show("Salvato nel diario"); close();
   };
+
+  const CATS = [["proteine", "Proteine", Beef], ["carbo", "Carbo", Wheat], ["grassi", "Grassi", Droplet], ["verdura", "Verdura", Leaf], ["frutta", "Frutta", Apple]];
+
   return (
     <>
       <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, marginBottom: 4 }}>Registra: {data.meal}</div>
-      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 12 }}>Preferisci la foto? <b onClick={() => { close(); ctx.setSheet({ type: "ai" }); }} style={{ color: C.ink, cursor: "pointer" }}>Usa l'AI →</b></div>
-      <Field label="Cosa hai mangiato"><textarea value={food} onChange={(e) => setFood(e.target.value)} rows={2} placeholder="Es. Riso con zucchine e pollo" style={input} /></Field>
-      <Field label="Foto del pasto">
-        {photo ? <div style={{ position: "relative", borderRadius: 14, overflow: "hidden" }}><img src={photo} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover", display: "block" }} /><button onClick={() => setPhoto(null)} style={{ position: "absolute", top: 8, right: 8, background: "rgba(30,50,40,.7)", color: "#fff", border: "none", borderRadius: 100, width: 30, height: 30, cursor: "pointer" }}><X size={15} /></button></div>
-          : <button onClick={() => fileRef.current.click()} style={{ width: "100%", border: `1.5px dashed ${C.line}`, borderRadius: 14, padding: 18, background: "#fff", cursor: "pointer", color: C.muted, fontFamily: sans, fontSize: 13.5 }}><Camera size={26} color={C.ink} /><div style={{ marginTop: 6 }}>Scatta o carica una foto</div></button>}
-        <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
-      </Field>
+      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 12 }}>Scegli i cibi concessi dalla tua dieta, per categoria. <b onClick={() => { close(); ctx.setSheet({ type: "ai" }); }} style={{ color: C.ink, cursor: "pointer" }}>Foto AI →</b></div>
+
+      {items.length > 0 && (
+        <div style={{ background: C.ink, color: "#fff", borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+          {items.map((it, i) => { const a = ALIMENTI_BY_ID[it.id]; return (
+            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, minWidth: 0 }}>{a.nome}</span>
+              <input value={it.g} onChange={(e) => setG(i, e.target.value)} inputMode="numeric" style={{ width: 52, background: "rgba(255,255,255,.16)", border: "none", borderRadius: 7, color: "#fff", fontSize: 13.5, fontWeight: 600, padding: "4px 7px", textAlign: "right", fontFamily: sans }} />
+              <span style={{ fontSize: 12, opacity: .8 }}>g</span>
+              <button onClick={() => rm(i)} style={{ background: "none", border: "none", color: "rgba(255,255,255,.7)", cursor: "pointer", display: "flex" }}><X size={15} /></button>
+            </div>
+          ); })}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,.15)" }}>
+            <span style={{ fontSize: 12, fontWeight: 700 }}>{r0(tot.kcal)} kcal</span>
+            {[["P", tot.p, C.prot], ["C", tot.c, C.carb], ["G", tot.f, C.fat]].map(([l, v, col]) => <span key={l} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: col, padding: "2px 8px", borderRadius: 100 }}>{l} {r0(v)}g</span>)}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10 }}>
+        {CATS.map(([k, l, Ic]) => <button key={k} onClick={() => { setCat(k); setQ(""); }} style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${cat === k && !q ? C.ink : C.line}`, background: cat === k && !q ? C.ink : C.card, color: cat === k && !q ? "#fff" : C.muted, borderRadius: 100, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: sans }}><Ic size={14} /> {l}</button>)}
+      </div>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="…o cerca un alimento" style={{ ...input, marginBottom: 10 }} />
+
+      <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 14 }}>
+        {lista.map((a) => (
+          <div key={a.id} onClick={() => add(a)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{catIcon(a.categoria)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>{a.nome}</div><div style={{ fontSize: 11, color: C.muted }}>{a.kcal} kcal/100g · porz. {a.porzioneG}g</div></div>
+            <Plus size={17} color={C.ink} />
+          </div>
+        ))}
+        {!lista.length && <div style={{ fontSize: 12.5, color: C.muted, padding: "12px 0" }}>Nessun alimento in questa categoria compatibile con la tua dieta.</div>}
+      </div>
+
+      <Field label="Non lo trovi? Scrivilo (senza macro)"><input value={freeText} onChange={(e) => setFreeText(e.target.value)} placeholder="Es. torta della nonna" style={input} /></Field>
+
       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: C.text }}>Sintomi dopo il pasto</div>
       {SYMPTOMS.map((s) => (
         <div key={s.k} style={{ marginBottom: 12 }}>
@@ -1586,7 +1643,7 @@ function EntrySheet({ data, ctx, close }) {
         </div>
       ))}
       <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Energia, umore, altro…" style={input} /></Field>
-      <button onClick={save} style={btnPrimary}><Check size={18} /> Salva nel diario</button>
+      <button onClick={save} style={btnPrimary}><Check size={18} /> Salva e chiudi</button>
     </>
   );
 }
