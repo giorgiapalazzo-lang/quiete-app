@@ -333,6 +333,26 @@ export default function App() {
     if (next) setScreen(next);
   }, [authUser]);
 
+  // Cambio archetipo/dieta: le kcal restano sul fabbisogno (persona+obiettivo),
+  // i macro carbo/grassi si ricalcolano secondo la forma della nuova dieta.
+  const changeArchetipo = useCallback((id) => {
+    setStore((s) => {
+      const pr = s.profile;
+      let macro = pr.macro, kcal = pr.kcalObiettivo;
+      try {
+        const schema = calcolaSchema(
+          { sesso: pr.sesso, eta: pr.eta, altezzaCm: pr.altezza, pesoKg: pr.peso, attivita: pr.attivita, obiettivo: pr.obiettivo, allenamento: pr.allenamento, massaGrassaPct: pr.massaGrassa, condizioni: pr.condizioni || [] },
+          { archetipoMacroPct: ARCHETIPI[id]?.macroPct },
+        );
+        macro = schema.macro; kcal = schema.kcalObiettivo;
+      } catch {}
+      const profile = { ...pr, archetipo: id, macro, kcalObiettivo: kcal };
+      try { localStorage.setItem("quiete_profile", JSON.stringify(profile)); } catch {}
+      if (authUser) upsertProfile(profile).catch(() => {});
+      return { ...s, profile };
+    });
+  }, [authUser]);
+
   const handleLogout = useCallback(async () => {
     await signOut();
     setAuthUser(null);
@@ -407,7 +427,7 @@ export default function App() {
   if (isDesktop)
     return (
       <DesktopShell
-        {...{ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano, authUser, handleLogout }}
+        {...{ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano, authUser, handleLogout, changeArchetipo }}
       />
     );
 
@@ -444,7 +464,7 @@ export default function App() {
         </div>
       </nav>
 
-      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet, authUser, handleLogout }} />}
+      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet, authUser, handleLogout, changeArchetipo }} />}
       {toast.node}
     </Frame>
   );
@@ -584,12 +604,14 @@ function Assessment({ initial, onDone, isDesktop }) {
   // Calcolo (solo quando serve).
   const result = useMemo(() => {
     if (step < 4) return null;
+    // Prima l'archetipo, così i macro seguono la forma della dieta (§5/§6 riferimento).
+    const arch = suggerisciArchetipo({ obiettivo: f.obiettivo, condizioni: f.condizioni });
     const profilo = {
       sesso: f.sesso, eta: +f.eta, altezzaCm: +f.altezza, pesoKg: +f.peso,
       attivita: f.attivita, obiettivo: f.obiettivo, allenamento: f.allenamento,
+      condizioni: f.condizioni,
     };
-    const schema = calcolaSchema(profilo);
-    const arch = suggerisciArchetipo({ obiettivo: f.obiettivo, condizioni: f.condizioni });
+    const schema = calcolaSchema(profilo, { archetipoMacroPct: ARCHETIPI[arch.consigliato].macroPct });
     const pasti = ripartisciPasti(schema.kcalObiettivo, schema.macro);
     return { schema, arch, pasti };
   }, [step, f]);
@@ -1388,6 +1410,29 @@ function EntrySheet({ data, ctx, close }) {
 }
 
 function PlansSheet({ ctx, close }) {
+  const prof = ctx.store.profile;
+  // Dopo l'assessment: lo switch cambia l'ARCHETIPO (che guida davvero i macro),
+  // non i vecchi piani demo. Le kcal restano sul fabbisogno, cambiano carbo/grassi.
+  if (prof.assessmentDone && prof.archetipo) {
+    return (
+      <>
+        <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, marginBottom: 4 }}>Il tuo approccio</div>
+        <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 16 }}>Cambia lo stile alimentare: le kcal restano sul tuo fabbisogno, si adattano i macro.</div>
+        {Object.values(ARCHETIPI).map((a) => { const active = a.id === prof.archetipo; return (
+          <div key={a.id} onClick={() => { ctx.changeArchetipo(a.id); ctx.toast.show(`Approccio: ${a.nome}`); close(); }} style={{ display: "flex", gap: 13, alignItems: "flex-start", background: C.card, border: `1.5px solid ${active ? C.ink : C.line}`, borderRadius: 16, padding: 14, marginBottom: 11, cursor: "pointer" }}>
+            <div style={{ width: 12, height: 12, borderRadius: 100, background: a.colore, marginTop: 4, flex: "0 0 auto" }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, color: C.text }}>{a.nome}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 1.45 }}>{a.descrizione}</div>
+              <div style={{ fontSize: 11.5, color: C.gold, marginTop: 4 }}>Carbo {a.macroPct.carboidrati}% · Prot {a.macroPct.proteine}% · Grassi {a.macroPct.grassi}%</div>
+            </div>
+            {active ? <Check size={20} color={C.ink} /> : <ChevronRight size={18} color={C.muted} />}
+          </div>
+        ); })}
+        <div style={{ fontSize: 11.5, color: C.muted, textAlign: "center", marginTop: 6, lineHeight: 1.5 }}>Import dei piani PDF delle nutrizioniste in arrivo.</div>
+      </>
+    );
+  }
   return (
     <>
       <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, marginBottom: 4 }}>I miei piani</div>
@@ -1666,7 +1711,7 @@ function useIsDesktop(bp = 1024) {
   return desktop;
 }
 
-function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano, authUser, handleLogout }) {
+function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, tf, setTf, toast, piano, authUser, handleLogout, changeArchetipo }) {
   const NAV = [
     ["oggi", Home, "Oggi"],
     ["piano", CalendarDays, "Piano"],
@@ -1726,7 +1771,7 @@ function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, 
           </div>
         </div>
       </div>
-      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet, authUser, handleLogout }} />}
+      {sheet && <Sheet sheet={sheet} close={() => setSheet(null)} ctx={{ plan, store, db, toast, setSheet, authUser, handleLogout, changeArchetipo }} />}
       {toast.node}
     </>
   );

@@ -1,31 +1,26 @@
 // ============================================================================
 // Motore nutrizionale di Quiete — calcolo di fabbisogno energetico e macros.
 //
-// IMPORTANTE (legale + prodotto): questo motore genera uno *schema alimentare
-// orientativo* basato su linee guida pubbliche (Mifflin-St Jeor, EFSA/IOM AMDR,
-// ISSN, LARN/SINU, CREA). NON è una prescrizione dietetica: quella in Italia è
-// atto riservato a medico, biologo nutrizionista o dietista. La UI deve sempre
-// mostrare il disclaimer e la CTA verso i nutrizionisti del team.
+// Calibrato su docs/clinical-dietetics-reference.md (ricerca "Clinical Dietetics
+// Workflow": ISSN, EFSA, ACSM, ESPEN, AND/ANDID, Academy of Nutrition & Dietetics).
+// Ogni numero qui traccia a una riga di quel documento — NON semplificare senza
+// aggiornare anche il riferimento.
 //
-// Fonti principali:
-// - BMR: Mifflin MD, St Jeor ST (1990) — equazione validata su 498 soggetti.
-// - Moltiplicatori TDEE: standard 1.2–1.9 (AND/DC/ACSM).
-// - Ripartizione macro: EFSA AMDR (carbo 45–60%, grassi 20–35%) + IOM.
-// - Proteine g/kg: ISSN Position Stand (Jäger et al. 2017).
-// - Deficit/surplus e ritmo sicuro: WHO/NHS/CDC (0.5–1 kg/sett; ~1%/sett).
-// - Ripartizione pasti: CREA "Linee guida per una sana alimentazione" 2018.
+// IMPORTANTE (legale + prodotto): genera uno *schema orientativo*, non una
+// prescrizione (in Italia atto riservato a medico/biologo/dietista). La UI mostra
+// sempre il disclaimer e la CTA verso i nutrizionisti del team.
 // ============================================================================
 
 export type Sesso = "uomo" | "donna";
 
-// 5 livelli standard di attività (moltiplicatori TDEE).
 export type LivelloAttivita =
-  | "sedentario" // lavoro da scrivania, nessun esercizio
-  | "leggero" // esercizio leggero 1–3 gg/sett
-  | "moderato" // esercizio moderato 3–5 gg/sett
-  | "attivo" // esercizio intenso 6–7 gg/sett
-  | "molto_attivo"; // atleta / doppio allenamento / lavoro fisico
+  | "sedentario"
+  | "leggero"
+  | "moderato"
+  | "attivo"
+  | "molto_attivo";
 
+// §2 — moltiplicatori PAL (BMR × fattore).
 export const MOLTIPLICATORI_ATTIVITA: Record<LivelloAttivita, number> = {
   sedentario: 1.2,
   leggero: 1.375,
@@ -34,73 +29,107 @@ export const MOLTIPLICATORI_ATTIVITA: Record<LivelloAttivita, number> = {
   molto_attivo: 1.9,
 };
 
+const ORDINE_ATTIVITA: LivelloAttivita[] = [
+  "sedentario",
+  "leggero",
+  "moderato",
+  "attivo",
+  "molto_attivo",
+];
+
+/**
+ * §2 — Correzione sovrastima attività. La ricerca mostra che le persone
+ * sovrastimano l'attività fisica in media del 51%: in onboarding si usa un
+ * livello più basso dell'auto-dichiarato (floor: sedentario).
+ */
+export function correggiAttivita(a: LivelloAttivita): LivelloAttivita {
+  const i = ORDINE_ATTIVITA.indexOf(a);
+  return ORDINE_ATTIVITA[Math.max(0, i - 1)];
+}
+
 export type Obiettivo =
   | "dimagrimento"
   | "mantenimento"
-  | "massa" // ipertrofia / aumento massa muscolare
-  | "ricomposizione" // perdere grasso + preservare/costruire muscolo
-  | "salute_intestinale"; // focus benessere gut, kcal ~ mantenimento
+  | "massa"
+  | "ricomposizione"
+  | "salute_intestinale";
 
-// Tipo di allenamento prevalente: influenza le proteine e i carbo.
 export type TipoAllenamento = "nessuno" | "forza" | "cardio" | "misto";
 
 export type ProfiloNutrizionale = {
   sesso: Sesso;
-  eta: number; // anni
+  eta: number;
   altezzaCm: number;
   pesoKg: number;
   attivita: LivelloAttivita;
   obiettivo: Obiettivo;
   allenamento?: TipoAllenamento; // default "nessuno"
+  massaGrassaPct?: number; // se nota (BIA/plica) → Katch-McArdle
+  condizioni?: string[]; // per aggiustamenti clinici (menopausa, gravidanza…)
 };
 
-export type Macro = { proteine: number; carboidrati: number; grassi: number }; // grammi/giorno
+export type Macro = { proteine: number; carboidrati: number; grassi: number }; // g/giorno
+
+export type OpzioniSchema = {
+  // §2 — applica la correzione attività di un livello (default true).
+  correzioneAttivita?: boolean;
+  // §5/§6 — forma la ripartizione carbo/grassi secondo l'archetipo scelto.
+  archetipoMacroPct?: { proteine: number; carboidrati: number; grassi: number };
+};
 
 export type RisultatoNutrizionale = {
-  bmr: number; // metabolismo basale (kcal)
-  tdee: number; // dispendio energetico totale (kcal)
-  kcalObiettivo: number; // kcal giornaliere consigliate per l'obiettivo
-  deltaKcal: number; // scarto rispetto al TDEE (negativo = deficit)
+  bmr: number;
+  metodoBmr: "mifflin" | "katch"; // formula usata
+  tdee: number; // con attività (eventualmente corretta)
+  attivitaUsata: LivelloAttivita;
+  kcalObiettivo: number;
+  deltaKcal: number;
   macro: Macro;
-  percentuali: { proteine: number; carboidrati: number; grassi: number }; // % kcal
-  proteineGkg: number; // g proteine per kg usato nel calcolo
-  ritmoStimatoKgSettimana: number; // stima variazione peso (negativa = calo)
-  note: string[]; // avvisi/spiegazioni per l'utente (divulgazione)
+  percentuali: { proteine: number; carboidrati: number; grassi: number };
+  proteineGkg: number;
+  ritmoStimatoKgSettimana: number;
+  note: string[];
 };
 
-// Kcal per grammo di macronutriente (fattori di Atwater).
 const KCAL_PER_G = { proteine: 4, carboidrati: 4, grassi: 9 } as const;
 
 /**
- * Metabolismo basale — equazione di Mifflin-St Jeor.
- * Uomo:  BMR = 10·peso + 6.25·altezza − 5·età + 5
- * Donna: BMR = 10·peso + 6.25·altezza − 5·età − 161
+ * §1 — BMR/REE.
+ * Default Mifflin-St Jeor (ADA 2005: più accurato per popolazioni moderne).
+ * Katch-McArdle (370 + 21.6·LBM) quando è nota la % massa grassa: più preciso
+ * per chi è magro/muscoloso, dove Mifflin sottostima.
  */
-export function calcolaBMR(p: Pick<ProfiloNutrizionale, "sesso" | "eta" | "altezzaCm" | "pesoKg">): number {
+export function calcolaBMR(
+  p: Pick<ProfiloNutrizionale, "sesso" | "eta" | "altezzaCm" | "pesoKg" | "massaGrassaPct">,
+): { bmr: number; metodo: "mifflin" | "katch" } {
+  if (p.massaGrassaPct != null && p.massaGrassaPct > 3 && p.massaGrassaPct < 60) {
+    const lbm = p.pesoKg * (1 - p.massaGrassaPct / 100);
+    return { bmr: Math.round(370 + 21.6 * lbm), metodo: "katch" };
+  }
   const base = 10 * p.pesoKg + 6.25 * p.altezzaCm - 5 * p.eta;
-  return Math.round(base + (p.sesso === "uomo" ? 5 : -161));
+  return { bmr: Math.round(base + (p.sesso === "uomo" ? 5 : -161)), metodo: "mifflin" };
 }
 
-/** Dispendio energetico totale = BMR × moltiplicatore attività. */
+/** §2 — TDEE = BMR × moltiplicatore attività. */
 export function calcolaTDEE(bmr: number, attivita: LivelloAttivita): number {
   return Math.round(bmr * MOLTIPLICATORI_ATTIVITA[attivita]);
 }
 
 /**
- * Scarto calorico per obiettivo (in frazione del TDEE).
- * - Dimagrimento: −20% (deficit moderato, preserva massa magra; ~0.5–1 kg/sett).
- * - Massa: +12% surplus contenuto (limita l'accumulo di grasso).
- * - Ricomposizione: −10% leggero deficit, compensato da proteine alte.
+ * §3 — Aggiustamento calorico per obiettivo.
+ * - Dimagrimento: −20% del TDEE (banda conservativa −10…−20%; ~0.5–1%/sett).
+ * - Ricomposizione: −10% (leggero deficit, compensato da proteine alte).
+ * - Massa: +250 kcal/die assolute (banda lean bulk +200…+300, NON percentuale).
  * - Mantenimento / salute intestinale: 0.
  */
-function fattoreObiettivo(obiettivo: Obiettivo): number {
+function deltaObiettivo(obiettivo: Obiettivo, tdee: number): number {
   switch (obiettivo) {
     case "dimagrimento":
-      return -0.2;
-    case "massa":
-      return 0.12;
+      return Math.round(tdee * -0.2);
     case "ricomposizione":
-      return -0.1;
+      return Math.round(tdee * -0.1);
+    case "massa":
+      return 250;
     case "mantenimento":
     case "salute_intestinale":
       return 0;
@@ -108,62 +137,106 @@ function fattoreObiettivo(obiettivo: Obiettivo): number {
 }
 
 /**
- * Proteine in g/kg di peso corporeo, secondo obiettivo + attività + sesso.
- * Base ISSN: sedentari 0.8–1.0; attivi 1.2–1.6; forza 1.6–2.0; in deficit 2.0–2.4.
- * Donna in menopausa (età ≥ 50): minimo 1.2 per la salute muscolo-scheletrica.
+ * §4 — Proteine g/kg secondo obiettivo + attività + condizioni.
+ * Riferimento: sedentari 0.8 (RDA) — qui 1.0 come floor pro-muscolo; chi si
+ * allena 1.4–2.0; ipertrofia 1.6–2.4; in deficit 1.6–2.2 g/kg peso; anziani
+ * ≥65 e menopausa 1.2 (sarcopenia); gravidanza 1.1–1.5.
  */
 function proteineGkg(p: ProfiloNutrizionale): number {
   const forza = p.allenamento === "forza" || p.allenamento === "misto";
+  const cond = new Set(p.condizioni ?? []);
   let g: number;
 
-  if (p.obiettivo === "dimagrimento") g = 2.0; // preserva massa magra in deficit
+  if (cond.has("gravidanza")) g = 1.3;
+  else if (p.obiettivo === "dimagrimento") g = 2.0;
   else if (p.obiettivo === "ricomposizione") g = 2.2;
-  else if (p.obiettivo === "massa") g = forza ? 1.9 : 1.6;
+  else if (p.obiettivo === "massa") g = forza ? 2.0 : 1.8;
   else if (forza) g = 1.7;
   else if (p.attivita === "sedentario") g = 1.0;
+  else if (p.attivita === "leggero") g = 1.2;
   else g = 1.4;
 
-  // Salvaguardia menopausa/anziani.
+  // Floor clinici (sarcopenia / menopausa).
+  if (p.eta >= 65 && g < 1.2) g = 1.2;
+  if (cond.has("menopausa") && g < 1.2) g = 1.2;
   if (p.sesso === "donna" && p.eta >= 50 && g < 1.2) g = 1.2;
 
   return g;
 }
 
 /**
- * Calcolo completo dello schema energetico + macros a partire dal profilo.
- * Ordine: proteine (per kg) → grassi (%kcal minimo salutare) → carbo (resto).
+ * §2–§6 — Schema energetico + macros dal profilo.
+ * Ordine: BMR → TDEE (attività corretta) → kcal obiettivo (floor sicurezza) →
+ * proteine (g/kg, cap AMDR 35%E) → carbo/grassi divisi secondo l'archetipo
+ * (floor grassi 0.8 g/kg + 20%E, cap 35%E) → carbo residuo.
  */
-export function calcolaSchema(p: ProfiloNutrizionale): RisultatoNutrizionale {
+export function calcolaSchema(
+  p: ProfiloNutrizionale,
+  opzioni: OpzioniSchema = {},
+): RisultatoNutrizionale {
   const note: string[] = [];
-  const bmr = calcolaBMR(p);
-  const tdee = calcolaTDEE(bmr, p.attivita);
+  const cond = new Set(p.condizioni ?? []);
 
-  const delta = Math.round(tdee * fattoreObiettivo(p.obiettivo));
+  const { bmr, metodo } = calcolaBMR(p);
+
+  const correzione = opzioni.correzioneAttivita ?? true;
+  const attivitaUsata = correzione ? correggiAttivita(p.attivita) : p.attivita;
+  if (correzione && attivitaUsata !== p.attivita) {
+    note.push(
+      "Abbiamo prudenzialmente considerato un livello di attività leggermente più basso di quello dichiarato: le persone tendono a sovrastimare il movimento. Se registri i passi possiamo affinarlo.",
+    );
+  }
+  const tdee = calcolaTDEE(bmr, attivitaUsata);
+
+  let delta = deltaObiettivo(p.obiettivo, tdee);
+  // Gravidanza: mai in deficit.
+  if (cond.has("gravidanza") && delta < 0) {
+    delta = 0;
+    note.push(
+      "In gravidanza non impostiamo deficit calorici. Questo schema va sempre validato con il tuo medico o dietista.",
+    );
+  }
+
   let kcal = tdee + delta;
 
-  // Floor di sicurezza: mai sotto il BMR e mai sotto soglie minime salutari
-  // (1200 kcal donne, 1500 kcal uomini) — sotto queste serve un professionista.
+  // §3 — floor di sicurezza (donne 1200, uomini 1500).
   const minKcal = p.sesso === "donna" ? 1200 : 1500;
   if (kcal < minKcal) {
     kcal = minKcal;
     note.push(
-      `Il tuo obiettivo richiederebbe un apporto molto basso: l'abbiamo fissato al minimo di sicurezza (${minKcal} kcal). Per un deficit più marcato serve il supporto di un professionista.`
+      `Il tuo obiettivo richiederebbe un apporto molto basso: l'abbiamo fissato al minimo di sicurezza (${minKcal} kcal). Per un deficit più marcato serve il supporto di un professionista.`,
     );
   }
 
-  // Proteine (g/kg → grammi → kcal).
+  // §4 — Proteine (g/kg → grammi), cap AMDR 35%E.
   const gkg = proteineGkg(p);
-  const proteine = Math.round(gkg * p.pesoKg);
-  const kcalProteine = proteine * KCAL_PER_G.proteine;
+  let proteine = Math.round(gkg * p.pesoKg);
+  let kcalProteine = proteine * KCAL_PER_G.proteine;
+  const maxProtKcal = kcal * 0.35;
+  if (kcalProteine > maxProtKcal) {
+    kcalProteine = maxProtKcal;
+    proteine = Math.round(kcalProteine / KCAL_PER_G.proteine);
+  }
 
-  // Grassi: 27% delle kcal (dentro EFSA 20–35%), floor 0.8 g/kg per gli ormoni.
-  let grassi = Math.round((kcal * 0.27) / KCAL_PER_G.grassi);
-  const grassiMin = Math.round(0.8 * p.pesoKg);
-  if (grassi < grassiMin) grassi = grassiMin;
-  const kcalGrassi = grassi * KCAL_PER_G.grassi;
+  // §5/§6 — Carbo e grassi: divido le kcal residue secondo la forma
+  // dell'archetipo (rapporto carbo:grassi). Default bilanciato mediterraneo.
+  const remaining = Math.max(0, kcal - kcalProteine);
+  const arch = opzioni.archetipoMacroPct;
+  const carbShare = arch
+    ? arch.carboidrati / (arch.carboidrati + arch.grassi)
+    : 50 / (50 + 32); // ~0.61 (mediterranea)
 
-  // Carboidrati: kcal residue.
-  let carboidrati = Math.round((kcal - kcalProteine - kcalGrassi) / KCAL_PER_G.carboidrati);
+  let kcalGrassi = remaining * (1 - carbShare);
+  // §5 — Grassi entro 20–35%E (AMDR/EFSA). Floor 20%E, con minimo assoluto
+  // 0.5 g/kg per la salute ormonale; cap 35%E. Il floor a %E (non g/kg alto)
+  // lascia spazio all'archetipo di spostare il rapporto carbo:grassi.
+  const grassiFloorKcal = Math.max(0.5 * p.pesoKg * KCAL_PER_G.grassi, kcal * 0.2);
+  const grassiCapKcal = kcal * 0.35;
+  if (kcalGrassi < grassiFloorKcal) kcalGrassi = grassiFloorKcal;
+  if (kcalGrassi > grassiCapKcal) kcalGrassi = grassiCapKcal;
+
+  const grassi = Math.round(kcalGrassi / KCAL_PER_G.grassi);
+  let carboidrati = Math.round((kcal - kcalProteine - grassi * KCAL_PER_G.grassi) / KCAL_PER_G.carboidrati);
   if (carboidrati < 0) carboidrati = 0;
 
   const macro: Macro = { proteine, carboidrati, grassi };
@@ -175,23 +248,25 @@ export function calcolaSchema(p: ProfiloNutrizionale): RisultatoNutrizionale {
     grassi: Math.round(((grassi * 9) / kcalTot) * 100),
   };
 
-  // Stima ritmo di variazione peso: 7700 kcal ≈ 1 kg di grasso.
+  // §3 — stima ritmo variazione peso (7700 kcal ≈ 1 kg grasso).
   const ritmoStimatoKgSettimana = Math.round(((delta * 7) / 7700) * 100) / 100;
 
   if (p.obiettivo === "dimagrimento") {
     note.push(
-      "Ritmo salutare di dimagrimento: 0,5–1 kg a settimana. Un calo più rapido di solito significa perdere muscolo e acqua, non grasso."
+      "Ritmo salutare di dimagrimento: 0,5–1 kg a settimana. Un calo più rapido di solito significa perdere muscolo e acqua, non grasso.",
     );
   }
-  if (p.allenamento === "forza" || p.allenamento === "misto") {
+  if (forzaOMisto(p)) {
     note.push(
-      "Nei giorni di allenamento aumenta i carboidrati (soprattutto pre/post workout) e punta a 20–40 g di proteine per pasto."
+      "Nei giorni di allenamento aumenta i carboidrati (soprattutto pre/post workout) e punta a 20–40 g di proteine per pasto.",
     );
   }
 
   return {
     bmr,
+    metodoBmr: metodo,
     tdee,
+    attivitaUsata,
     kcalObiettivo: kcal,
     deltaKcal: delta,
     macro,
@@ -202,8 +277,12 @@ export function calcolaSchema(p: ProfiloNutrizionale): RisultatoNutrizionale {
   };
 }
 
+function forzaOMisto(p: ProfiloNutrizionale): boolean {
+  return p.allenamento === "forza" || p.allenamento === "misto";
+}
+
 // ============================================================================
-// Ripartizione dei pasti nella giornata (CREA — sana alimentazione).
+// §7 — Ripartizione dei pasti nella giornata (CREA + distribuzione anticipata).
 // Colazione ~20%, spuntino ~5%, pranzo ~40%, merenda ~5%, cena ~30%.
 // ============================================================================
 
@@ -219,7 +298,7 @@ export const RIPARTIZIONE_PASTI: Record<Pasto, number> = {
 
 export type MacroPasto = { pasto: Pasto; kcal: number; macro: Macro };
 
-/** Distribuisce kcal e macros giornalieri sui 5 pasti secondo la ripartizione CREA. */
+/** Distribuisce kcal e macros giornalieri sui 5 pasti. */
 export function ripartisciPasti(kcalGiorno: number, macro: Macro): MacroPasto[] {
   return (Object.keys(RIPARTIZIONE_PASTI) as Pasto[]).map((pasto) => {
     const q = RIPARTIZIONE_PASTI[pasto];
