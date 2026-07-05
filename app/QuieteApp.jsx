@@ -573,6 +573,7 @@ function Assessment({ initial, onDone, isDesktop }) {
     eta: initial?.eta || "",
     altezza: initial?.altezza || "",
     peso: initial?.peso || "",
+    massaGrassa: initial?.massaGrassa || "",
     attivita: initial?.attivita || "",
     obiettivo: initial?.obiettivo || "",
     allenamento: initial?.allenamento || "nessuno",
@@ -598,6 +599,7 @@ function Assessment({ initial, onDone, isDesktop }) {
       if (!(eta >= 14 && eta <= 100)) return "Inserisci un'età valida (14–100)";
       if (!(h >= 120 && h <= 220)) return "Inserisci un'altezza valida in cm";
       if (!(p >= 30 && p <= 250)) return "Inserisci un peso valido in kg";
+      if (f.massaGrassa !== "" && !(+f.massaGrassa >= 3 && +f.massaGrassa <= 60)) return "Massa grassa non valida (3–60%). Lasciala vuota se non la conosci.";
       if (!f.attivita) return "Seleziona il tuo livello di attività";
     }
     if (step === 2 && !f.obiettivo) return "Scegli un obiettivo";
@@ -616,6 +618,7 @@ function Assessment({ initial, onDone, isDesktop }) {
     const arch = suggerisciArchetipo({ obiettivo: f.obiettivo, condizioni: f.condizioni });
     const profilo = {
       sesso: f.sesso, eta: +f.eta, altezzaCm: +f.altezza, pesoKg: +f.peso,
+      massaGrassaPct: f.massaGrassa ? +f.massaGrassa : undefined,
       attivita: f.attivita, obiettivo: f.obiettivo, allenamento: f.allenamento,
       condizioni: f.condizioni,
     };
@@ -627,6 +630,7 @@ function Assessment({ initial, onDone, isDesktop }) {
   const finish = () => {
     onDone({
       name: f.name, email: f.email, sesso: f.sesso, eta: +f.eta, altezza: +f.altezza, peso: +f.peso,
+      massaGrassa: f.massaGrassa ? +f.massaGrassa : undefined,
       attivita: f.attivita, obiettivo: f.obiettivo, allenamento: f.allenamento, condizioni: f.condizioni,
       // esiti calcolati (lead data + piano)
       kcalObiettivo: result.schema.kcalObiettivo, macro: result.schema.macro,
@@ -670,10 +674,15 @@ function Assessment({ initial, onDone, isDesktop }) {
           <>
             <Eyebrow>Il tuo corpo · 2/5</Eyebrow>
             {title("Qualche misura")}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
               {[["eta", "Età", "anni"], ["altezza", "Altezza", "cm"], ["peso", "Peso", "kg"]].map(([k, l, u]) => (
                 <div key={k}><label style={fieldLabel}>{l}</label><input value={f[k]} onChange={(e) => set(k, e.target.value)} type="number" inputMode="numeric" placeholder={u} style={field} /></div>
               ))}
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={fieldLabel}>Massa grassa % <span style={{ color: C.muted, fontWeight: 400 }}>· opzionale</span></label>
+              <input value={f.massaGrassa} onChange={(e) => set("massaGrassa", e.target.value)} type="number" inputMode="decimal" placeholder="es. 22 (dalla bilancia impedenziometrica / BIA)" style={field} />
+              <p style={{ fontSize: 11.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>Se la conosci (BIA, plicometria, DEXA) usiamo la formula Katch-McArdle, più precisa del calcolo su età/altezza. Lascia vuoto se non la sai.</p>
             </div>
             <label style={fieldLabel}>Quanto ti muovi?</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
