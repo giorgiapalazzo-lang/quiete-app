@@ -190,14 +190,49 @@ const SYMPTOMS = [{ k: "gonfiore", label: "Gonfiore" }, { k: "dolore", label: "D
 const LEVELS = ["Nessuno", "Lieve", "Moderato", "Severo"];
 
 // Weekly workout plan (integrated with the diet: training days -> more carbs at lunch)
+// Programma anti-gonfiore: corpo libero leggero + HIIT corsa, basso impatto
+// sull'intestino. Ogni esercizio ha un demo animato (vedi ExDemo).
 const WORKOUT = [
-  { day: "Lun", title: "Forza — parte superiore", dur: "45 min", train: true, ex: ["Panca manubri 4×10", "Rematore 4×10", "Lat machine 3×12", "Shoulder press 3×12", "Curl + push-down 3×12"] },
-  { day: "Mar", title: "Cardio leggero + core", dur: "30 min", train: true, ex: ["Camminata veloce 25'", "Plank 3×40\"", "Dead bug 3×12", "Russian twist 3×20"] },
-  { day: "Mer", title: "Riposo attivo", dur: "20 min", train: false, ex: ["Mobilità anche e spalle", "Stretching", "Camminata rilassata"] },
-  { day: "Gio", title: "Forza — parte inferiore", dur: "45 min", train: true, ex: ["Squat 4×10", "Affondi 3×12", "Stacco rumeno 4×10", "Hip thrust 3×12", "Calf raise 3×15"] },
-  { day: "Ven", title: "Full body + HIIT", dur: "35 min", train: true, ex: ["Circuito 4 giri", "Goblet squat 12", "Push-up 10", "Kettlebell swing 15", "Mountain climber 30\""] },
-  { day: "Sab", title: "Cardio + mobilità", dur: "30 min", train: false, ex: ["Camminata/corsa 25'", "Stretching completo"] },
-  { day: "Dom", title: "Riposo", dur: "—", train: false, ex: ["Recupero", "Passeggiata leggera"] },
+  { day: "Lun", title: "Core anti-gonfiore", dur: "20 min", train: true, focus: "Pancia & core profondo", ex: [
+    { n: "Respirazione diaframmatica", meta: "3 × 8 respiri", demo: "breath", tip: "Attiva il core profondo e sgonfia: inspira gonfiando la pancia, espira tirando l'ombelico dentro." },
+    { n: "Dead bug", meta: "3 × 10 per lato", demo: "hold", tip: "Schiena a terra ben aderente, muovi braccio e gamba opposti." },
+    { n: "Plank sugli avambracci", meta: "3 × 30\"", demo: "hold" },
+    { n: "Bird-dog", meta: "3 × 10 per lato", demo: "hold" },
+    { n: "Ponte glutei", meta: "3 × 15", demo: "squat" },
+    { n: "Cat-cow", meta: "10 lenti", demo: "flow", tip: "Mobilizza la colonna e aiuta la motilità intestinale." },
+  ] },
+  { day: "Mar", title: "HIIT corsa leggera", dur: "22 min", train: true, focus: "Cardio a intervalli", ex: [
+    { n: "Camminata di riscaldamento", meta: "5 min", demo: "walk" },
+    { n: "Corsa — sforzo medio", meta: "8 × 30\"", demo: "run", tip: "Ritmo in cui riesci a parlare a fatica, non uno sprint." },
+    { n: "Camminata di recupero", meta: "8 × 60\"", demo: "walk" },
+    { n: "Defaticamento camminando", meta: "3 min", demo: "walk" },
+  ] },
+  { day: "Mer", title: "Mobilità & digestione", dur: "15 min", train: false, focus: "Recupero attivo", ex: [
+    { n: "Cat-cow", meta: "10 lenti", demo: "flow" },
+    { n: "Torsioni da seduta", meta: "8 per lato", demo: "flow", tip: "Le rotazioni del busto favoriscono il transito e sgonfiano." },
+    { n: "Camminata rilassata", meta: "20 min", demo: "walk", tip: "Una camminata dopo i pasti riduce gonfiore e picchi glicemici." },
+  ] },
+  { day: "Gio", title: "Corpo libero total body", dur: "25 min", train: true, focus: "Forza leggera a casa", ex: [
+    { n: "Squat a corpo libero", meta: "3 × 12", demo: "squat" },
+    { n: "Affondi alternati", meta: "3 × 10 per gamba", demo: "squat" },
+    { n: "Push-up sulle ginocchia", meta: "3 × 8", demo: "hold" },
+    { n: "Mountain climber lenti", meta: "3 × 20", demo: "run", tip: "Controllati: avvicina il ginocchio al petto senza rimbalzare." },
+    { n: "Plank up-down", meta: "3 × 8", demo: "hold" },
+  ] },
+  { day: "Ven", title: "HIIT corsa + core", dur: "25 min", train: true, focus: "Cardio + pancia", ex: [
+    { n: "Corsa a intervalli", meta: "6 × 40\"", demo: "run" },
+    { n: "Camminata di recupero", meta: "6 × 60\"", demo: "walk" },
+    { n: "Jumping jack basso impatto", meta: "3 × 20", demo: "jump", tip: "Se saltare dà fastidio, apri le gambe con un passo laterale." },
+    { n: "Plank", meta: "3 × 30\"", demo: "hold" },
+  ] },
+  { day: "Sab", title: "Camminata lunga", dur: "40 min", train: false, focus: "Cardio dolce", ex: [
+    { n: "Camminata a passo svelto", meta: "35 min", demo: "walk" },
+    { n: "Stretching completo", meta: "5 min", demo: "flow" },
+  ] },
+  { day: "Dom", title: "Riposo & respiro", dur: "10 min", train: false, focus: "Recupero", ex: [
+    { n: "Respirazione diaframmatica", meta: "5 min", demo: "breath" },
+    { n: "Passeggiata leggera", meta: "facoltativa", demo: "walk" },
+  ] },
 ];
 
 /* ============================================================
@@ -1211,35 +1246,43 @@ function Allenamento() {
   const w = WORKOUT[d];
   const trainDays = WORKOUT.filter((x) => x.train).length;
   return (
-    <>
-      <Eyebrow>Movimento</Eyebrow><H1>Piano di allenamento</H1>
-      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px" }}>{trainDays} sessioni a settimana, coordinate con la dieta.</p>
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <Eyebrow>Movimento · anti-gonfiore</Eyebrow><H1>Allenamento</H1>
+      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px", lineHeight: 1.5 }}>Corpo libero leggero e HIIT di corsa, a basso impatto sull'intestino: {trainDays} sessioni + mobilità. Ogni esercizio ha la sua animazione.</p>
       <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 12 }}>
         {DAYS.map((x, i) => <button key={x} onClick={() => setD(i)} style={{ flex: "0 0 auto", border: `1px solid ${i === d ? C.ink : C.line}`, background: i === d ? C.ink : C.card, color: i === d ? "#fff" : C.muted, borderRadius: 100, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: sans, position: "relative" }}>{x}{WORKOUT[i].train && <span style={{ position: "absolute", top: 5, right: 7, width: 6, height: 6, borderRadius: 100, background: i === d ? C.gold : C.green }} />}</button>)}
       </div>
       <div style={{ borderRadius: 22, padding: 20, marginBottom: 14, color: "#fff", background: w.train ? C.ink : C.green, boxShadow: SHL, position: "relative", overflow: "hidden" }}>
         <BotanicalBg />
         <div style={{ position: "relative" }}>
-          <div style={{ fontSize: 11.5, opacity: .85, fontWeight: 600, letterSpacing: ".04em", display: "flex", alignItems: "center", gap: 6 }}>{w.train ? <Dumbbell size={14} /> : <Footprints size={14} />} {w.dur}</div>
+          <div style={{ fontSize: 11.5, opacity: .85, fontWeight: 600, letterSpacing: ".04em", display: "flex", alignItems: "center", gap: 6 }}>{w.train ? <Dumbbell size={14} /> : <Footprints size={14} />} {w.dur} · {w.focus}</div>
           <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, marginTop: 6 }}>{w.title}</div>
         </div>
       </div>
       <Card>
         <SectionH icon={<Activity size={17} color={C.ink} />}>Esercizi</SectionH>
         {w.ex.map((e, i) => (
-          <div key={i} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: i < w.ex.length - 1 ? `1px solid ${C.line}` : "none", alignItems: "center" }}>
-            <span style={{ width: 26, height: 26, borderRadius: 100, background: C.greenL, color: C.ink, fontWeight: 700, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: serif, flex: "0 0 auto" }}>{i + 1}</span>
-            <span style={{ fontSize: 14, color: C.text }}>{e}</span>
+          <div key={i} style={{ display: "flex", gap: 13, padding: "11px 0", borderBottom: i < w.ex.length - 1 ? `1px solid ${C.line}` : "none", alignItems: "center" }}>
+            <ExDemo kind={e.demo} size={54} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{e.n}</div>
+              <div style={{ fontSize: 12.5, color: C.gold, fontWeight: 600, marginTop: 1 }}>{e.meta}</div>
+              {e.tip && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 1.45 }}>{e.tip}</div>}
+            </div>
           </div>
         ))}
       </Card>
-      {w.train && (
+      {w.train ? (
         <div style={{ background: C.goldBg, borderRadius: 14, padding: "12px 14px", fontSize: 12.5, color: "#8a6412", display: "flex", gap: 9, marginBottom: 14 }}>
-          <UtensilsCrossed size={16} style={{ flex: "0 0 auto", marginTop: 1 }} /><span><b>Nutrizione del giorno.</b> Oggi ti alleni: porta i carboidrati del pranzo alla quota "allenamento" del tuo piano. Proteine entro 1–2h dalla sessione.</span>
+          <UtensilsCrossed size={16} style={{ flex: "0 0 auto", marginTop: 1 }} /><span><b>Nutrizione del giorno.</b> Ti alleni: porta i carboidrati del pranzo alla quota "allenamento" del piano. Proteine entro 1–2h dalla sessione.</span>
+        </div>
+      ) : (
+        <div style={{ background: C.greenL, borderRadius: 14, padding: "12px 14px", fontSize: 12.5, color: C.ink, display: "flex", gap: 9, marginBottom: 14 }}>
+          <Leaf size={16} style={{ flex: "0 0 auto", marginTop: 1 }} /><span><b>Perché aiuta la pancia.</b> Camminata dopo i pasti, respirazione diaframmatica e torsioni del busto favoriscono il transito e riducono il gonfiore. Niente sforzi intensi a stomaco pieno.</span>
         </div>
       )}
       <Disc />
-    </>
+    </div>
   );
 }
 
@@ -1840,6 +1883,59 @@ const Ill = ({ type = "bowl", h = 120 }) => {
     <ellipse cx="100" cy="82" rx="46" ry="20" fill={type === "fish" ? "#DCE7DE" : "#EBDFBE"} />
     <circle cx="84" cy="80" r="7" fill={C.green} /><circle cx="104" cy="76" r="6" fill={C.gold} /><circle cx="116" cy="82" r="5" fill={C.clay} />
   </svg>);
+};
+// Demo animato di un esercizio (SVG in loop, effetto "gif" — nessun asset esterno).
+const ExDemo = ({ kind = "hold", size = 54 }) => {
+  const ink = C.ink;
+  const L = (x1, y1, x2, y2, extra) => <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={ink} strokeWidth={3} strokeLinecap="round" {...extra} />;
+  const anim = (name, dur, origin, delay) => ({ "data-anim": true, style: { animation: `${name} ${dur} infinite ease-in-out`, animationDelay: delay || "0s", transformOrigin: origin } });
+  let fig;
+  if (kind === "run" || kind === "walk") {
+    const s = kind === "run" ? ".5s" : ".95s";
+    fig = (<>
+      <g {...anim("ex-bob", s)}>
+        <circle cx="31" cy="15" r="5" fill={ink} />
+        {L(31, 20, 30, 34)}
+        {L(30, 24, 39, 29, anim("ex-armf", s, "30px 24px"))}
+        {L(30, 24, 22, 30, anim("ex-armb", s, "30px 24px"))}
+      </g>
+      {L(30, 34, 37, 48, anim("ex-legf", s, "30px 34px"))}
+      {L(30, 34, 23, 48, anim("ex-legb", s, "30px 34px"))}
+    </>);
+  } else if (kind === "squat") {
+    fig = (<g {...anim("ex-squat", "1.6s", "30px 50px")}>
+      <circle cx="30" cy="15" r="5" fill={ink} />
+      {L(30, 20, 30, 32)}{L(30, 24, 41, 25)}{L(30, 32, 24, 48)}{L(30, 32, 36, 48)}
+    </g>);
+  } else if (kind === "jump") {
+    fig = (<g {...anim("ex-jump", ".7s", "30px 30px")}>
+      <circle cx="30" cy="14" r="5" fill={ink} />
+      {L(30, 19, 30, 33)}
+      {L(30, 22, 20, 15, anim("ex-spread-neg", ".7s", "30px 22px"))}
+      {L(30, 22, 40, 15, anim("ex-spread", ".7s", "30px 22px"))}
+      {L(30, 33, 24, 47, anim("ex-spread-neg", ".7s", "30px 33px"))}
+      {L(30, 33, 36, 47, anim("ex-spread", ".7s", "30px 33px"))}
+    </g>);
+  } else if (kind === "flow") {
+    fig = (<g {...anim("ex-sway", "2.6s", "30px 50px")}>
+      <circle cx="30" cy="15" r="5" fill={ink} />
+      {L(30, 20, 30, 36)}{L(30, 24, 22, 31)}{L(30, 24, 39, 19)}{L(30, 36, 24, 50)}{L(30, 36, 36, 50)}
+    </g>);
+  } else if (kind === "breath") {
+    fig = (<>
+      <circle cx="30" cy="30" r="16" fill="none" stroke={ink} strokeWidth="2" {...anim("ex-breathe", "3.6s", "30px 30px")} />
+      <circle cx="30" cy="30" r="10" fill="none" stroke={ink} strokeWidth="2" {...anim("ex-breathe", "3.6s", "30px 30px", "-.5s")} />
+      <circle cx="30" cy="30" r="4" fill={ink} {...anim("ex-pulse", "3.6s", "30px 30px")} />
+    </>);
+  } else {
+    fig = (<g {...anim("ex-pulse", "2.8s", "32px 38px")}>
+      <circle cx="15" cy="34" r="5" fill={ink} />
+      {L(19, 35, 45, 30)}{L(20, 35, 18, 46)}{L(45, 30, 53, 45)}{L(45, 30, 49, 46)}
+    </g>);
+  }
+  return (
+    <svg viewBox="0 0 60 60" width={size} height={size} className="exdemo" style={{ background: C.greenL, borderRadius: 12, flex: "0 0 auto", display: "block" }} aria-hidden="true">{fig}</svg>
+  );
 };
 const Pill = ({ children, tone = "green" }) => {
   const m = { green: { bg: C.greenL, fg: C.ink }, gold: { bg: C.goldBg, fg: "#96702A" }, clay: { bg: "#F6E4DC", fg: "#A24E37" }, plain: { bg: "#F1EFE7", fg: C.muted } }[tone];

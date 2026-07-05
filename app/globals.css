@@ -84,3 +84,23 @@ body {
 .qdash {
   width: 100%;
 }
+
+/* ============================================================
+   Demo esercizi — animazioni loop in SVG (effetto "gif" leggero,
+   self-contained, senza asset esterni).
+   ============================================================ */
+.exdemo *[data-anim] {
+  transform-box: view-box;
+}
+@keyframes ex-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+@keyframes ex-legf { 0%, 100% { transform: rotate(20deg); } 50% { transform: rotate(-20deg); } }
+@keyframes ex-legb { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
+@keyframes ex-armf { 0%, 100% { transform: rotate(-28deg); } 50% { transform: rotate(28deg); } }
+@keyframes ex-armb { 0%, 100% { transform: rotate(28deg); } 50% { transform: rotate(-28deg); } }
+@keyframes ex-squat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(7px) scaleY(0.9); } }
+@keyframes ex-jump { 0%, 100% { transform: translateY(3px); } 50% { transform: translateY(-5px); } }
+@keyframes ex-spread { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(32deg); } }
+@keyframes ex-spread-neg { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-32deg); } }
+@keyframes ex-breathe { 0%, 100% { transform: scale(0.55); opacity: 0.35; } 50% { transform: scale(1); opacity: 1; } }
+@keyframes ex-sway { 0%, 100% { transform: rotate(-9deg); } 50% { transform: rotate(9deg); } }
+@keyframes ex-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
