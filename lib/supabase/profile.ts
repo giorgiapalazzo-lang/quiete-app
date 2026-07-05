@@ -7,6 +7,7 @@ export type ProfileData = {
   eta?: number;
   altezza?: number;
   peso?: number;
+  massaGrassa?: number;
   attivita?: string;
   obiettivo?: string;
   allenamento?: string;
@@ -23,8 +24,10 @@ type ProfileRow = {
   email: string | null;
   sex: string | null;
   birthdate: string | null;
+  eta: number | null;
   height_cm: number | null;
   peso: number | null;
+  massa_grassa: number | null;
   attivita: string | null;
   obiettivo: string | null;
   allenamento: string | null;
@@ -42,8 +45,10 @@ function rowToProfile(r: ProfileRow): ProfileData {
     name: r.name ?? undefined,
     email: r.email ?? undefined,
     sesso: r.sex === "F" ? "donna" : r.sex === "M" ? "uomo" : undefined,
+    eta: r.eta ?? undefined,
     altezza: r.height_cm ?? undefined,
     peso: r.peso ?? undefined,
+    massaGrassa: r.massa_grassa ?? undefined,
     attivita: r.attivita ?? undefined,
     obiettivo: r.obiettivo ?? undefined,
     allenamento: r.allenamento ?? undefined,
@@ -68,8 +73,10 @@ function profileToRow(p: ProfileData, uid: string) {
     name: p.name,
     email: p.email,
     sex: p.sesso === "donna" ? "F" : p.sesso === "uomo" ? "M" : null,
+    eta: p.eta,
     height_cm: p.altezza,
     peso: p.peso,
+    massa_grassa: p.massaGrassa,
     attivita: p.attivita,
     obiettivo: p.obiettivo,
     allenamento: p.allenamento,

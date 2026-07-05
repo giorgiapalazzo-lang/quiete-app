@@ -141,6 +141,8 @@ create table if not exists calendar_links (
 -- Campi assessment dal flusso onboarding Quiete (ex 0002)
 alter table profiles
   add column if not exists email text,
+  add column if not exists eta int,
+  add column if not exists massa_grassa numeric,
   add column if not exists peso numeric,
   add column if not exists attivita text,
   add column if not exists obiettivo text,

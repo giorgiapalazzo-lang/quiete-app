@@ -8,7 +8,7 @@ import {
   Wand2, Beef, UtensilsCrossed, Egg, Download, Share2, Zap, LogOut, Mail, Lock, Eye, EyeOff
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { calcolaSchema, ripartisciPasti } from "../lib/nutrition/engine";
+import { calcolaSchema, ripartisciPasti, distribuisciMacro } from "../lib/nutrition/engine";
 import { ARCHETIPI, suggerisciArchetipo } from "../lib/nutrition/archetipi";
 import { generaPiano } from "../lib/nutrition/piano";
 import { ALIMENTI_BY_ID } from "../lib/nutrition/alimenti";
@@ -268,7 +268,7 @@ export default function App() {
   const isDesktop = useIsDesktop();
   const piano = useMemo(() => {
     const p = store.profile;
-    if (!p.assessmentDone || !p.macro) return null;
+    if (!p.assessmentDone || !p.macro || !Number.isFinite(p.macro.proteine) || !Number.isFinite(p.kcalObiettivo)) return null;
     return generaPiano({ kcalObiettivo: p.kcalObiettivo, macro: p.macro, condizioni: p.condizioni || [], archetipo: p.archetipo || "mediterranea" });
   }, [store.profile]);
   const plan = useMemo(() => {
@@ -339,12 +339,20 @@ export default function App() {
     setStore((s) => {
       const pr = s.profile;
       let macro = pr.macro, kcal = pr.kcalObiettivo;
+      const archMacro = ARCHETIPI[id]?.macroPct;
+      const engP = { sesso: pr.sesso, eta: pr.eta, altezzaCm: pr.altezza, pesoKg: pr.peso, attivita: pr.attivita, obiettivo: pr.obiettivo, allenamento: pr.allenamento, massaGrassaPct: pr.massaGrassa, condizioni: pr.condizioni || [] };
       try {
-        const schema = calcolaSchema(
-          { sesso: pr.sesso, eta: pr.eta, altezzaCm: pr.altezza, pesoKg: pr.peso, attivita: pr.attivita, obiettivo: pr.obiettivo, allenamento: pr.allenamento, massaGrassaPct: pr.massaGrassa, condizioni: pr.condizioni || [] },
-          { archetipoMacroPct: ARCHETIPI[id]?.macroPct },
-        );
-        macro = schema.macro; kcal = schema.kcalObiettivo;
+        if (Number.isFinite(pr.peso) && Number.isFinite(pr.altezza) && Number.isFinite(pr.eta)) {
+          // Profilo completo: ricalcolo tutto (kcal + macro).
+          const schema = calcolaSchema(engP, { archetipoMacroPct: archMacro });
+          if (Number.isFinite(schema.kcalObiettivo) && Number.isFinite(schema.macro?.proteine)) {
+            macro = schema.macro; kcal = schema.kcalObiettivo;
+          }
+        } else if (Number.isFinite(pr.peso) && Number.isFinite(kcal)) {
+          // Legacy (manca età): ricalcolo solo i macro dalla kcal esistente.
+          const d = distribuisciMacro(kcal, engP, archMacro);
+          if (Number.isFinite(d.macro?.proteine)) macro = d.macro;
+        }
       } catch {}
       const profile = { ...pr, archetipo: id, macro, kcalObiettivo: kcal };
       try { localStorage.setItem("quiete_profile", JSON.stringify(profile)); } catch {}
@@ -954,8 +962,9 @@ function Oggi({ plan, store, db, setSheet, go, toast, day, piano, isDesktop }) {
   const logged = store.diary.filter((e) => new Date(e.ts).toDateString() === today && e.nutri);
   const tot = logged.reduce((a, e) => ({ kcal: a.kcal + (e.nutri.kcal || 0), p: a.p + (e.nutri.p || 0), c: a.c + (e.nutri.c || 0), f: a.f + (e.nutri.f || 0) }), { kcal: 0, p: 0, c: 0, f: 0 });
   const profile = store.profile;
-  const kcalTarget = profile.kcalObiettivo || plan.kcal;
-  const planTot = profile.macro
+  const kcalTarget = Number.isFinite(profile.kcalObiettivo) ? profile.kcalObiettivo : plan.kcal;
+  const macroOk = profile.macro && Number.isFinite(profile.macro.proteine) && Number.isFinite(profile.macro.carboidrati) && Number.isFinite(profile.macro.grassi);
+  const planTot = macroOk
     ? { kcal: kcalTarget, p: profile.macro.proteine, c: profile.macro.carboidrati, f: profile.macro.grassi }
     : sumMeal([...COLAZIONE.items, ...SP_AM.items, ...WEEK[DAYS[day]].pranzo, ...MERENDA.items, ...WEEK[DAYS[day]].cena, ...EVO.items]);
 

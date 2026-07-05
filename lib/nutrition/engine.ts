@@ -167,6 +167,51 @@ function proteineMinGkg(p: ProfiloNutrizionale): number {
 }
 
 /**
+ * §4/§5/§6 — Distribuzione dei macro data una kcal target.
+ * Proteine = % dell'archetipo con un MINIMO g/kg (preserva la massa magra);
+ * grassi 20–35%E secondo la forma dell'archetipo; carbo a residuo.
+ * Riusabile per ricalcolare i macro al cambio dieta senza rifare il BMR.
+ */
+export function distribuisciMacro(
+  kcal: number,
+  p: ProfiloNutrizionale,
+  archetipoMacroPct?: { proteine: number; carboidrati: number; grassi: number },
+): { macro: Macro; percentuali: { proteine: number; carboidrati: number; grassi: number }; proteineGkg: number } {
+  const arch = archetipoMacroPct;
+  const minGkg = proteineMinGkg(p);
+  const protArchKcal = kcal * ((arch?.proteine ?? 18) / 100);
+  let kcalProteine = Math.max(protArchKcal, minGkg * p.pesoKg * KCAL_PER_G.proteine);
+  if (kcalProteine > kcal * 0.35) kcalProteine = kcal * 0.35;
+  const proteine = Math.round(kcalProteine / KCAL_PER_G.proteine);
+
+  const remaining = Math.max(0, kcal - kcalProteine);
+  const carbShare = arch
+    ? arch.carboidrati / (arch.carboidrati + arch.grassi)
+    : 50 / (50 + 32); // ~0.61 (mediterranea)
+
+  let kcalGrassi = remaining * (1 - carbShare);
+  // Grassi entro 20–35%E; minimo assoluto 0.5 g/kg per la salute ormonale.
+  const grassiFloorKcal = Math.max(0.5 * p.pesoKg * KCAL_PER_G.grassi, kcal * 0.2);
+  const grassiCapKcal = kcal * 0.35;
+  if (kcalGrassi < grassiFloorKcal) kcalGrassi = grassiFloorKcal;
+  if (kcalGrassi > grassiCapKcal) kcalGrassi = grassiCapKcal;
+
+  const grassi = Math.round(kcalGrassi / KCAL_PER_G.grassi);
+  let carboidrati = Math.round((kcal - kcalProteine - grassi * KCAL_PER_G.grassi) / KCAL_PER_G.carboidrati);
+  if (carboidrati < 0) carboidrati = 0;
+
+  const macro: Macro = { proteine, carboidrati, grassi };
+  const kcalTot = proteine * 4 + carboidrati * 4 + grassi * 9 || 1;
+  const percentuali = {
+    proteine: Math.round(((proteine * 4) / kcalTot) * 100),
+    carboidrati: Math.round(((carboidrati * 4) / kcalTot) * 100),
+    grassi: Math.round(((grassi * 9) / kcalTot) * 100),
+  };
+  const proteineGkg = p.pesoKg ? Math.round((proteine / p.pesoKg) * 10) / 10 : 0;
+  return { macro, percentuali, proteineGkg };
+}
+
+/**
  * §2–§6 — Schema energetico + macros dal profilo.
  * Ordine: BMR → TDEE (attività corretta) → kcal obiettivo (floor sicurezza) →
  * proteine (g/kg, cap AMDR 35%E) → carbo/grassi divisi secondo l'archetipo
@@ -210,45 +255,10 @@ export function calcolaSchema(
     );
   }
 
-  // §4/§5 — Proteine: seguono la % dell'archetipo (identità della dieta), ma
-  // con un MINIMO g/kg per preservare la massa magra. Così una "Mediterranea"
-  // resta ~18–20% proteine e non viene stravolta dal g/kg. Cap AMDR 35%E.
-  const arch = opzioni.archetipoMacroPct;
-  const minGkg = proteineMinGkg(p);
-  const protArchKcal = kcal * ((arch?.proteine ?? 18) / 100);
-  let kcalProteine = Math.max(protArchKcal, minGkg * p.pesoKg * KCAL_PER_G.proteine);
-  if (kcalProteine > kcal * 0.35) kcalProteine = kcal * 0.35;
-  const proteine = Math.round(kcalProteine / KCAL_PER_G.proteine);
-  const gkg = Math.round((proteine / p.pesoKg) * 10) / 10; // g/kg effettivo
-
-  // §5/§6 — Carbo e grassi: divido le kcal residue secondo la forma
-  // dell'archetipo (rapporto carbo:grassi). Default bilanciato mediterraneo.
-  const remaining = Math.max(0, kcal - kcalProteine);
-  const carbShare = arch
-    ? arch.carboidrati / (arch.carboidrati + arch.grassi)
-    : 50 / (50 + 32); // ~0.61 (mediterranea)
-
-  let kcalGrassi = remaining * (1 - carbShare);
-  // §5 — Grassi entro 20–35%E (AMDR/EFSA). Floor 20%E, con minimo assoluto
-  // 0.5 g/kg per la salute ormonale; cap 35%E. Il floor a %E (non g/kg alto)
-  // lascia spazio all'archetipo di spostare il rapporto carbo:grassi.
-  const grassiFloorKcal = Math.max(0.5 * p.pesoKg * KCAL_PER_G.grassi, kcal * 0.2);
-  const grassiCapKcal = kcal * 0.35;
-  if (kcalGrassi < grassiFloorKcal) kcalGrassi = grassiFloorKcal;
-  if (kcalGrassi > grassiCapKcal) kcalGrassi = grassiCapKcal;
-
-  const grassi = Math.round(kcalGrassi / KCAL_PER_G.grassi);
-  let carboidrati = Math.round((kcal - kcalProteine - grassi * KCAL_PER_G.grassi) / KCAL_PER_G.carboidrati);
-  if (carboidrati < 0) carboidrati = 0;
-
-  const macro: Macro = { proteine, carboidrati, grassi };
-
-  const kcalTot = proteine * 4 + carboidrati * 4 + grassi * 9;
-  const percentuali = {
-    proteine: Math.round(((proteine * 4) / kcalTot) * 100),
-    carboidrati: Math.round(((carboidrati * 4) / kcalTot) * 100),
-    grassi: Math.round(((grassi * 9) / kcalTot) * 100),
-  };
+  // §4/§5/§6 — Distribuzione macro (proteine con floor g/kg, carbo/grassi
+  // secondo la forma dell'archetipo). Estratta per poterla ricalcolare da una
+  // kcal già nota (es. cambio dieta) senza rifare il BMR.
+  const { macro, percentuali, proteineGkg: gkg } = distribuisciMacro(kcal, p, opzioni.archetipoMacroPct);
 
   // §3 — stima ritmo variazione peso (7700 kcal ≈ 1 kg grasso).
   const ritmoStimatoKgSettimana = Math.round(((delta * 7) / 7700) * 100) / 100;
