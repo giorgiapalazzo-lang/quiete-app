@@ -61,6 +61,16 @@ export const RICETTE: Ricetta[] = [
   { id: "mela_mandorle", nome: "Mela e mandorle", pasto: "spuntino", tempo: 2, porzioniBase: 1, ill: "porridge",
     ingredienti: [{ id: "mela", g: 150 }, { id: "mandorle", g: 20 }],
     passi: ["Sbuccia la mela a spicchi e accompagna con le mandorle."] },
+  // --- Low-FODMAP (per IBS) ---
+  { id: "porridge_quinoa", nome: "Porridge di quinoa, banana e noci", pasto: "colazione", tempo: 12, porzioniBase: 1, ill: "porridge",
+    ingredienti: [{ id: "quinoa", g: 50 }, { id: "banana", g: 100 }, { id: "noci", g: 15 }],
+    passi: ["Cuoci la quinoa in acqua 12 min finché morbida.", "Schiaccia metà banana e mescolala alla quinoa calda.", "Completa con la banana a fette e le noci."] },
+  { id: "banana_noci", nome: "Banana e noci", pasto: "spuntino", tempo: 2, porzioniBase: 1, ill: "porridge",
+    ingredienti: [{ id: "banana", g: 120 }, { id: "noci", g: 15 }],
+    passi: ["Affetta la banana e accompagnala con le noci."] },
+  { id: "kiwi_noci", nome: "Kiwi e noci", pasto: "spuntino", tempo: 2, porzioniBase: 1, ill: "porridge",
+    ingredienti: [{ id: "kiwi", g: 150 }, { id: "noci", g: 15 }],
+    passi: ["Taglia i kiwi e accompagnali con le noci."] },
 ];
 
 /** Ingredienti riscalati per N porzioni, con nome leggibile. */
