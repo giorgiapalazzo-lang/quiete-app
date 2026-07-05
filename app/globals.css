@@ -78,25 +78,9 @@ body {
   color: #1e4b3a;
 }
 
-/* Masonry a colonne: l'intestazione (eyebrow + h1) spanna a tutta larghezza,
-   poi le card fluiscono in colonne. */
+/* La dashboard non usa più il masonry a colonne CSS (bilanciava male e
+   lasciava vuoti): ogni schermata gestisce internamente le proprie colonne
+   con una griglia esplicita. */
 .qdash {
-  column-gap: 22px;
-}
-.qdash > * {
-  break-inside: avoid;
-}
-.qdash > :nth-child(1),
-.qdash > :nth-child(2) {
-  column-span: all;
-}
-@media (min-width: 1024px) {
-  .qdash {
-    column-count: 2;
-  }
-}
-@media (min-width: 1560px) {
-  .qdash {
-    column-count: 3;
-  }
+  width: 100%;
 }

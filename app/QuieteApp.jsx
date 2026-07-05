@@ -948,7 +948,7 @@ function SignupScreen({ email: initialEmail, isDesktop, onBack, onSkip, onSucces
 /* ============================================================
    OGGI
    ============================================================ */
-function Oggi({ plan, store, db, setSheet, go, toast, day, piano }) {
+function Oggi({ plan, store, db, setSheet, go, toast, day, piano, isDesktop }) {
   const fasting = useFasting(store.lastMeal);
   const today = new Date().toDateString();
   const logged = store.diary.filter((e) => new Date(e.ts).toDateString() === today && e.nutri);
@@ -959,80 +959,105 @@ function Oggi({ plan, store, db, setSheet, go, toast, day, piano }) {
     ? { kcal: kcalTarget, p: profile.macro.proteine, c: profile.macro.carboidrati, f: profile.macro.grassi }
     : sumMeal([...COLAZIONE.items, ...SP_AM.items, ...WEEK[DAYS[day]].pranzo, ...MERENDA.items, ...WEEK[DAYS[day]].cena, ...EVO.items]);
 
+  const nutritionCard = (
+    <Card style={{ padding: 18 }}>
+      <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        <KcalRing value={tot.kcal} target={kcalTarget} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>Registrato oggi</div>
+          <MacroBar label="Proteine" g={tot.p} target={planTot.p} color={C.prot} />
+          <MacroBar label="Carboidrati" g={tot.c} target={planTot.c} color={C.carb} />
+          <MacroBar label="Grassi" g={tot.f} target={planTot.f} color={C.fat} />
+        </div>
+      </div>
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}`, fontSize: 12.5, color: C.muted, display: "flex", justifyContent: "space-between" }}>
+        <span>Obiettivo giornaliero</span><span style={{ fontWeight: 600, color: C.ink }}>≈ {r0(planTot.kcal)} kcal · P{r0(planTot.p)} C{r0(planTot.c)} G{r0(planTot.f)}</span>
+      </div>
+    </Card>
+  );
+
+  const aiBtn = (
+    <button onClick={() => setSheet({ type: "ai" })} style={{ width: "100%", border: "none", cursor: "pointer", borderRadius: 22, padding: 18, marginBottom: 14, color: "#fff", background: C.ink, boxShadow: SHL, position: "relative", overflow: "hidden", textAlign: "left", fontFamily: sans }}>
+      <BotanicalBg />
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 50, height: 50, borderRadius: 15, background: "rgba(255,255,255,.16)", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><Wand2 size={26} /></div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600 }}>Aggiungi con una foto</div>
+          <div style={{ fontSize: 12.5, opacity: .9, marginTop: 2 }}>L'AI riconosce il piatto e stima grammature e valori</div>
+        </div>
+        <ChevronRight size={20} />
+      </div>
+    </button>
+  );
+
+  const fastingCard = (
+    <Card>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ fontSize: 12.5, color: C.muted, alignSelf: "flex-start", marginBottom: 6 }}>Ultimo pasto</div>
+        <Ring frac={fasting.frac} big={fasting.label} small="dall'ultimo pasto" />
+        <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, padding: "7px 15px", borderRadius: 100, background: fasting.tone.bg, color: fasting.tone.fg, display: "flex", alignItems: "center", gap: 7 }}>{fasting.icon} {fasting.status}</div>
+        <div style={{ fontSize: 12.5, color: C.muted, marginTop: 10, textAlign: "center", maxWidth: 300 }}>{fasting.sub}</div>
+        <button onClick={() => { db.meals.logNow(Date.now()); toast.show("Ultimo pasto aggiornato"); }} style={btnGhost}><RefreshCw size={15} /> Ho mangiato ora</button>
+      </div>
+    </Card>
+  );
+
+  const registerCard = (
+    <Card>
+      <SectionH icon={<Plus size={17} color={C.ink} />}>Registra un pasto</SectionH>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+        {[["Colazione", Sparkles], ["Pranzo", UtensilsCrossed], ["Cena", Clock], ["Spuntino", Apple]].map(([l, Ic]) => (
+          <button key={l} onClick={() => setSheet({ type: "entry", data: { meal: l } })} style={quickBtn}><Ic size={22} color={C.ink} /><span style={{ fontSize: 11, fontWeight: 600, color: C.text }}>{l}</span></button>
+        ))}
+      </div>
+    </Card>
+  );
+
+  const hubGrid = (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+      {[["Alimenti", Leaf, () => setSheet({ type: "foods" })], ["Ricette", UtensilsCrossed, () => setSheet({ type: "recipes" })], ["Frequenze", TrendingUp, () => setSheet({ type: "freq" })], ["Report visita", FileText, () => setSheet({ type: "report" })], ["Profilo & misure", User, () => setSheet({ type: "profile" })]].map(([t, Ic, on]) => (
+        <button key={t} onClick={on} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 15, cursor: "pointer", boxShadow: SH, display: "flex", flexDirection: "column", gap: 8, textAlign: "left", fontFamily: sans }}>
+          <Ic size={22} color={C.ink} /><span style={{ fontWeight: 600, fontSize: 14, color: C.text }}>{t}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const suppsCard = (
+    <Card>
+      <SectionH icon={<PillIcon size={17} color={C.ink} />}>Integrazione di oggi</SectionH>
+      {SUPPS.map((s) => (
+        <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: C.goldBg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><PillIcon size={16} color="#96702A" /></div>
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13.5, color: C.text }}>{s.n}</div><div style={{ fontSize: 12, color: C.muted }}>{s.dose} · {s.when}</div></div>
+          <span style={{ fontSize: 12, color: C.gold, fontWeight: 600 }}>{s.time}</span>
+        </div>
+      ))}
+    </Card>
+  );
+
+  if (isDesktop) {
+    return (
+      <>
+        <Eyebrow>Oggi</Eyebrow><H1>La tua giornata</H1>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.55fr) minmax(0,1fr)", gap: 20, alignItems: "start", marginTop: 4 }}>
+          <div>{nutritionCard}{aiBtn}{registerCard}{hubGrid}</div>
+          <div>{fastingCard}{suppsCard}</div>
+        </div>
+        <Disc />
+      </>
+    );
+  }
+
   return (
     <>
       <Eyebrow>Oggi</Eyebrow><H1>La tua giornata</H1>
-
-      {/* Daily nutrition dashboard */}
-      <Card style={{ padding: 18 }}>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <KcalRing value={tot.kcal} target={kcalTarget} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 10 }}>Registrato oggi</div>
-            <MacroBar label="Proteine" g={tot.p} target={planTot.p} color={C.prot} />
-            <MacroBar label="Carboidrati" g={tot.c} target={planTot.c} color={C.carb} />
-            <MacroBar label="Grassi" g={tot.f} target={planTot.f} color={C.fat} />
-          </div>
-        </div>
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}`, fontSize: 12.5, color: C.muted, display: "flex", justifyContent: "space-between" }}>
-          <span>Obiettivo giornaliero</span><span style={{ fontWeight: 600, color: C.ink }}>≈ {r0(planTot.kcal)} kcal · P{r0(planTot.p)} C{r0(planTot.c)} G{r0(planTot.f)}</span>
-        </div>
-      </Card>
-
-      {/* AI photo — hero action */}
-      <button onClick={() => setSheet({ type: "ai" })} style={{ width: "100%", border: "none", cursor: "pointer", borderRadius: 22, padding: 18, marginBottom: 14, color: "#fff", background: C.ink, boxShadow: SHL, position: "relative", overflow: "hidden", textAlign: "left", fontFamily: sans }}>
-        <BotanicalBg />
-        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 50, height: 50, borderRadius: 15, background: "rgba(255,255,255,.16)", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><Wand2 size={26} /></div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600 }}>Aggiungi con una foto</div>
-            <div style={{ fontSize: 12.5, opacity: .9, marginTop: 2 }}>L'AI riconosce il piatto e stima grammature e valori</div>
-          </div>
-          <ChevronRight size={20} />
-        </div>
-      </button>
-
-      {/* Fasting */}
-      <Card>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <div style={{ fontSize: 12.5, color: C.muted, alignSelf: "flex-start", marginBottom: 6 }}>Ultimo pasto</div>
-          <Ring frac={fasting.frac} big={fasting.label} small="dall'ultimo pasto" />
-          <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, padding: "7px 15px", borderRadius: 100, background: fasting.tone.bg, color: fasting.tone.fg, display: "flex", alignItems: "center", gap: 7 }}>{fasting.icon} {fasting.status}</div>
-          <div style={{ fontSize: 12.5, color: C.muted, marginTop: 10, textAlign: "center", maxWidth: 300 }}>{fasting.sub}</div>
-          <button onClick={() => { db.meals.logNow(Date.now()); toast.show("Ultimo pasto aggiornato"); }} style={btnGhost}><RefreshCw size={15} /> Ho mangiato ora</button>
-        </div>
-      </Card>
-
-      {/* Quick log */}
-      <Card>
-        <SectionH icon={<Plus size={17} color={C.ink} />}>Registra un pasto</SectionH>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
-          {[["Colazione", Sparkles], ["Pranzo", UtensilsCrossed], ["Cena", Clock], ["Spuntino", Apple]].map(([l, Ic]) => (
-            <button key={l} onClick={() => setSheet({ type: "entry", data: { meal: l } })} style={quickBtn}><Ic size={22} color={C.ink} /><span style={{ fontSize: 11, fontWeight: 600, color: C.text }}>{l}</span></button>
-          ))}
-        </div>
-      </Card>
-
-      {/* Hub */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-        {[["Alimenti", Leaf, () => setSheet({ type: "foods" })], ["Ricette", UtensilsCrossed, () => setSheet({ type: "recipes" })], ["Frequenze", TrendingUp, () => setSheet({ type: "freq" })], ["Report visita", FileText, () => setSheet({ type: "report" })], ["Profilo & misure", User, () => setSheet({ type: "profile" })]].map(([t, Ic, on]) => (
-          <button key={t} onClick={on} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 15, cursor: "pointer", boxShadow: SH, display: "flex", flexDirection: "column", gap: 8, textAlign: "left", fontFamily: sans }}>
-            <Ic size={22} color={C.ink} /><span style={{ fontWeight: 600, fontSize: 14, color: C.text }}>{t}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Integrazione */}
-      <Card>
-        <SectionH icon={<PillIcon size={17} color={C.ink} />}>Integrazione di oggi</SectionH>
-        {SUPPS.map((s) => (
-          <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: C.goldBg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><PillIcon size={16} color="#96702A" /></div>
-            <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13.5, color: C.text }}>{s.n}</div><div style={{ fontSize: 12, color: C.muted }}>{s.dose} · {s.when}</div></div>
-            <span style={{ fontSize: 12, color: C.gold, fontWeight: 600 }}>{s.time}</span>
-          </div>
-        ))}
-      </Card>
+      {nutritionCard}
+      {aiBtn}
+      {fastingCard}
+      {registerCard}
+      {hubGrid}
+      {suppsCard}
       <Disc />
     </>
   );
@@ -1762,7 +1787,7 @@ function DesktopShell({ tab, go, plan, store, db, setSheet, sheet, day, setDay, 
         <div className="qk-content">
           <div className="qk-content-inner">
             <div className="qdash">
-              {tab === "oggi" && <Oggi {...{ plan, store, db, setSheet, go, toast, day, piano }} />}
+              {tab === "oggi" && <Oggi {...{ plan, store, db, setSheet, go, toast, day, piano, isDesktop: true }} />}
               {tab === "piano" && <Piano {...{ day, setDay, setSheet, piano, store }} />}
               {tab === "spesa" && <Spesa {...{ store, db, tf, setTf, piano }} />}
               {tab === "allenamento" && <Allenamento />}

@@ -20,6 +20,10 @@ console.log("\n-- Stessa persona, archetipi diversi (kcal uguali, macro cambiano
   show(a, GIORGIA_CAFAGNA, a),
 );
 
+console.log("\n-- Caso marito (uomo, dimagrimento, mediterranea) --");
+show("Giuseppe 74kg 178 dimagr.", { sesso: "uomo", eta: 38, altezzaCm: 178, pesoKg: 74, attivita: "moderato", obiettivo: "dimagrimento", allenamento: "nessuno", condizioni: [] }, "mediterranea");
+show("  stesso ma mantenimento", { sesso: "uomo", eta: 38, altezzaCm: 178, pesoKg: 74, attivita: "moderato", obiettivo: "mantenimento", allenamento: "nessuno", condizioni: [] }, "mediterranea");
+
 console.log("\n-- Sensibilità alla persona (BMI/attività/obiettivo) --");
 show("Uomo 80kg attivo massa", { sesso: "uomo", eta: 35, altezzaCm: 180, pesoKg: 80, attivita: "attivo", obiettivo: "massa", allenamento: "forza", condizioni: [] }, "proteica");
 show("Donna 70kg sedent. mantieni", { sesso: "donna", eta: 45, altezzaCm: 165, pesoKg: 70, attivita: "sedentario", obiettivo: "mantenimento", allenamento: "nessuno", condizioni: [] }, "mediterranea");

@@ -137,24 +137,26 @@ function deltaObiettivo(obiettivo: Obiettivo, tdee: number): number {
 }
 
 /**
- * §4 — Proteine g/kg secondo obiettivo + attività + condizioni.
- * Riferimento: sedentari 0.8 (RDA) — qui 1.0 come floor pro-muscolo; chi si
- * allena 1.4–2.0; ipertrofia 1.6–2.4; in deficit 1.6–2.2 g/kg peso; anziani
- * ≥65 e menopausa 1.2 (sarcopenia); gravidanza 1.1–1.5.
+ * §4 — Proteine: MINIMO g/kg per preservare la massa magra secondo obiettivo +
+ * attività + condizioni. È un floor, non un target: la forma della dieta
+ * (archetipo) resta primaria, ma le proteine non scendono sotto questo minimo.
+ * Riferimento: in deficit 1.6–2.2 g/kg peso (1.6 base, 1.8 se ci si allena);
+ * ipertrofia/ricomp 1.6–1.8; sedentari 0.8–0.9; anziani/menopausa 1.2;
+ * gravidanza 1.1–1.5.
  */
-function proteineGkg(p: ProfiloNutrizionale): number {
+function proteineMinGkg(p: ProfiloNutrizionale): number {
   const forza = p.allenamento === "forza" || p.allenamento === "misto";
   const cond = new Set(p.condizioni ?? []);
   let g: number;
 
-  if (cond.has("gravidanza")) g = 1.3;
-  else if (p.obiettivo === "dimagrimento") g = 2.0;
-  else if (p.obiettivo === "ricomposizione") g = 2.2;
-  else if (p.obiettivo === "massa") g = forza ? 2.0 : 1.8;
-  else if (forza) g = 1.7;
-  else if (p.attivita === "sedentario") g = 1.0;
-  else if (p.attivita === "leggero") g = 1.2;
-  else g = 1.4;
+  if (cond.has("gravidanza")) g = 1.1;
+  else if (p.obiettivo === "dimagrimento") g = forza ? 1.8 : 1.6;
+  else if (p.obiettivo === "ricomposizione") g = 1.8;
+  else if (p.obiettivo === "massa") g = 1.6;
+  else if (forza) g = 1.5;
+  else if (p.attivita === "sedentario") g = 0.9;
+  else if (p.attivita === "leggero") g = 1.1;
+  else g = 1.2;
 
   // Floor clinici (sarcopenia / menopausa).
   if (p.eta >= 65 && g < 1.2) g = 1.2;
@@ -208,20 +210,20 @@ export function calcolaSchema(
     );
   }
 
-  // §4 — Proteine (g/kg → grammi), cap AMDR 35%E.
-  const gkg = proteineGkg(p);
-  let proteine = Math.round(gkg * p.pesoKg);
-  let kcalProteine = proteine * KCAL_PER_G.proteine;
-  const maxProtKcal = kcal * 0.35;
-  if (kcalProteine > maxProtKcal) {
-    kcalProteine = maxProtKcal;
-    proteine = Math.round(kcalProteine / KCAL_PER_G.proteine);
-  }
+  // §4/§5 — Proteine: seguono la % dell'archetipo (identità della dieta), ma
+  // con un MINIMO g/kg per preservare la massa magra. Così una "Mediterranea"
+  // resta ~18–20% proteine e non viene stravolta dal g/kg. Cap AMDR 35%E.
+  const arch = opzioni.archetipoMacroPct;
+  const minGkg = proteineMinGkg(p);
+  const protArchKcal = kcal * ((arch?.proteine ?? 18) / 100);
+  let kcalProteine = Math.max(protArchKcal, minGkg * p.pesoKg * KCAL_PER_G.proteine);
+  if (kcalProteine > kcal * 0.35) kcalProteine = kcal * 0.35;
+  const proteine = Math.round(kcalProteine / KCAL_PER_G.proteine);
+  const gkg = Math.round((proteine / p.pesoKg) * 10) / 10; // g/kg effettivo
 
   // §5/§6 — Carbo e grassi: divido le kcal residue secondo la forma
   // dell'archetipo (rapporto carbo:grassi). Default bilanciato mediterraneo.
   const remaining = Math.max(0, kcal - kcalProteine);
-  const arch = opzioni.archetipoMacroPct;
   const carbShare = arch
     ? arch.carboidrati / (arch.carboidrati + arch.grassi)
     : 50 / (50 + 32); // ~0.61 (mediterranea)
