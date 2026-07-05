@@ -11,7 +11,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 import { calcolaSchema, ripartisciPasti, distribuisciMacro } from "../lib/nutrition/engine";
 import { ARCHETIPI, suggerisciArchetipo } from "../lib/nutrition/archetipi";
 import { generaPiano } from "../lib/nutrition/piano";
-import { ALIMENTI_BY_ID } from "../lib/nutrition/alimenti";
+import { ALIMENTI, ALIMENTI_BY_ID, sostituti, diStagione, ruoloAlimento, nutriPerGrammi } from "../lib/nutrition/alimenti";
 import { signUp, signIn, signOut, onAuthStateChange, getUser } from "../lib/supabase/auth";
 import { getProfile, upsertProfile } from "../lib/supabase/profile";
 import { isSupabaseConfigured } from "../lib/supabase/client";
@@ -86,6 +86,11 @@ function sumMeal(items) {
   }, { kcal: 0, p: 0, c: 0, f: 0 });
 }
 const r0 = (x) => Math.round(x);
+const catIcon = (cat) => {
+  const m = { cereali: Wheat, legumi: Leaf, verdura: Leaf, frutta: Apple, carne: Beef, pesce: Fish, uova: Egg, latticini: Milk, frutta_secca: Leaf, grassi: Droplet, dolci: Sparkles, bevande: Droplet };
+  const Ic = m[cat] || Leaf; return <Ic size={17} color={C.ink} />;
+};
+const fodmapLabel = (f) => (f === "basso" ? "FODMAP basso" : f === "medio" ? "FODMAP medio" : "FODMAP alto");
 const r1 = (x) => Math.round(x * 10) / 10;
 function sumPianoItems(items) {
   return (items || []).reduce((a, it) => {
@@ -1059,7 +1064,7 @@ function Oggi({ plan, store, db, setSheet, go, toast, day, piano, isDesktop }) {
 
   const hubGrid = (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-      {[["Alimenti", Leaf, () => setSheet({ type: "foods" })], ["Ricette", UtensilsCrossed, () => setSheet({ type: "recipes" })], ["Frequenze", TrendingUp, () => setSheet({ type: "freq" })], ["Report visita", FileText, () => setSheet({ type: "report" })], ["Profilo & misure", User, () => setSheet({ type: "profile" })]].map(([t, Ic, on]) => (
+      {[["Sostituzioni", ArrowRightLeft, () => setSheet({ type: "sostituzioni" })], ["Alimenti", Leaf, () => setSheet({ type: "foods" })], ["Ricette", UtensilsCrossed, () => setSheet({ type: "recipes" })], ["Frequenze", TrendingUp, () => setSheet({ type: "freq" })], ["Report visita", FileText, () => setSheet({ type: "report" })], ["Profilo & misure", User, () => setSheet({ type: "profile" })]].map(([t, Ic, on]) => (
         <button key={t} onClick={on} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 15, cursor: "pointer", boxShadow: SH, display: "flex", flexDirection: "column", gap: 8, textAlign: "left", fontFamily: sans }}>
           <Ic size={22} color={C.ink} /><span style={{ fontWeight: 600, fontSize: 14, color: C.text }}>{t}</span>
         </button>
@@ -1155,12 +1160,15 @@ function Piano({ day, setDay, setSheet, piano, store }) {
               <span style={{ fontFamily: sans, fontSize: 10.5, letterSpacing: ".1em", textTransform: "uppercase", color: C.gold, fontWeight: 700 }}>{m.slot}</span>
               {mt.kcal > 0 && <span style={{ fontSize: 11.5, color: C.muted, fontWeight: 600 }}>≈ {r0(mt.kcal)} kcal</span>}
             </div>
-            {m.items.map((it, idx) => (
-              <div key={idx} onClick={() => it.eq && setSheet({ type: "swap", data: it })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: idx < m.items.length - 1 ? `1px solid ${C.line}` : "none", cursor: it.eq ? "pointer" : "default" }}>
-                <div style={{ flex: 1 }}><span style={{ fontWeight: 600, fontSize: 14.5, color: C.text }}>{it.n}</span>{it.g > 0 && <span style={{ fontSize: 13, color: C.muted, marginLeft: 6 }}>{it.g} g</span>}</div>
-                {it.eq && <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.ink, fontSize: 12, fontWeight: 600 }}><ArrowRightLeft size={14} /> Sostituzioni</span>}
-              </div>
-            ))}
+            {m.items.map((it, idx) => {
+              const canSub = (it.id && ALIMENTI_BY_ID[it.id]) || it.eq;
+              return (
+                <div key={idx} onClick={() => { if (it.id && ALIMENTI_BY_ID[it.id]) setSheet({ type: "sostituzioni", data: { id: it.id, g: it.g } }); else if (it.eq) setSheet({ type: "swap", data: it }); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: idx < m.items.length - 1 ? `1px solid ${C.line}` : "none", cursor: canSub ? "pointer" : "default" }}>
+                  <div style={{ flex: 1 }}><span style={{ fontWeight: 600, fontSize: 14.5, color: C.text }}>{it.n}</span>{it.g > 0 && <span style={{ fontSize: 13, color: C.muted, marginLeft: 6 }}>{it.g} g</span>}</div>
+                  {canSub && <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.ink, fontSize: 12, fontWeight: 600 }}><ArrowRightLeft size={14} /> Sostituzioni</span>}
+                </div>
+              );
+            })}
             {mt.kcal > 0 && <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
               {[["P", mt.p, C.prot], ["C", mt.c, C.carb], ["G", mt.f, C.fat]].map(([l, v, col]) => <span key={l} style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: col, padding: "3px 9px", borderRadius: 100 }}>{l} {r0(v)}g</span>)}
             </div>}
@@ -1340,6 +1348,7 @@ function Sheet({ sheet, close, ctx }) {
           <button onClick={close} aria-label="Chiudi" style={{ position: "absolute", right: 14, top: 4, width: 34, height: 34, borderRadius: 100, border: "none", background: C.card, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SH }}><X size={19} /></button>
         </div>
         {sheet.type === "swap" && <SwapSheet item={sheet.data} />}
+        {sheet.type === "sostituzioni" && <SostituzioniSheet ctx={ctx} data={sheet.data} />}
         {sheet.type === "entry" && <EntrySheet data={sheet.data} ctx={ctx} close={close} />}
         {sheet.type === "ai" && <AiSheet ctx={ctx} close={close} />}
         {sheet.type === "plans" && <PlansSheet ctx={ctx} close={close} />}
@@ -1455,6 +1464,87 @@ function AiSheet({ ctx, close }) {
           </div>
           <button onClick={save} style={btnPrimary}><Check size={18} /> Salva nel diario</button>
           <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>Le stime AI hanno un margine d'errore (~15%): correggi le grammature per più precisione.</div>
+        </>
+      )}
+    </>
+  );
+}
+
+function SostituzioniSheet({ ctx, data }) {
+  const cond = ctx.store.profile.condizioni || [];
+  const restr = { fodmapBasso: cond.includes("ibs"), senzaGlutine: cond.includes("celiachia"), senzaLattosio: cond.includes("intolleranza_lattosio") };
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(data?.id || null);
+  const [g, setG] = useState(String(data?.g || (data?.id && ALIMENTI_BY_ID[data.id]?.porzioneG) || ""));
+  const mese = new Date().getMonth() + 1;
+  const base = sel ? ALIMENTI_BY_ID[sel] : null;
+  const grBase = +g || (base ? base.porzioneG : 0);
+  const results = q.trim().length >= 2 ? ALIMENTI.filter((a) => a.nome.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 12) : [];
+  const subs = base ? sostituti(sel, grBase, { ...restr, limite: 10 }) : [];
+  const nb = base ? nutriPerGrammi(base.id, grBase) : null;
+  const RL = { carbo: "carboidrati", proteine: "proteine", grassi: "grassi", verdura: "calorie", frutta: "calorie" };
+  const chips = (n) => (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: base ? "#fff" : C.ink }}>{r0(n.kcal)} kcal</span>
+      {[["P", n.proteine, C.prot], ["C", n.carboidrati, C.carb], ["G", n.grassi, C.fat]].map(([l, v, col]) => <span key={l} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: col, padding: "2px 8px", borderRadius: 100 }}>{l} {r0(v)}g</span>)}
+    </div>
+  );
+  return (
+    <>
+      <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, marginBottom: 4 }}>Sostituzioni</div>
+      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 14 }}>Scambia un cibo con un altro dello stesso tipo, con la grammatura giusta per pareggiare i macro.</div>
+      {!base ? (
+        <>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca un alimento (pasta, pollo, mela…)" style={{ ...input, marginBottom: 12 }} />
+          {results.map((a) => (
+            <div key={a.id} onClick={() => { setSel(a.id); setG(String(a.porzioneG)); setQ(""); }} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 0", borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{catIcon(a.categoria)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{a.nome}</div><div style={{ fontSize: 11.5, color: C.muted }}>{a.kcal} kcal/100g · {fodmapLabel(a.fodmap)}</div></div>
+              <ChevronRight size={17} color={C.muted} />
+            </div>
+          ))}
+          {!results.length && ["verdura", "frutta"].map((cat) => {
+            const items = diStagione(mese, cat);
+            if (!items.length) return null;
+            return (
+              <div key={cat} style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: C.gold, margin: "10px 0 8px", display: "flex", alignItems: "center", gap: 6 }}><Leaf size={13} /> {cat === "verdura" ? "Verdura" : "Frutta"} di stagione</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                  {items.map((a) => <button key={a.id} onClick={() => { setSel(a.id); setG(String(a.porzioneG)); }} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 100, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, color: C.text, cursor: "pointer", fontFamily: sans }}>{a.nome}</button>)}
+                </div>
+              </div>
+            );
+          })}
+          {!results.length && <p style={{ fontSize: 11.5, color: C.muted, marginTop: 14, lineHeight: 1.5 }}>Stagionalità italiana del mese corrente. Cerca un alimento sopra per vedere le sostituzioni con le grammature giuste.</p>}
+        </>
+      ) : (
+        <>
+          <button onClick={() => { setSel(null); setG(""); }} style={{ ...btnGhost, marginTop: 0 }}><ChevronLeft size={15} /> Cambia alimento</button>
+          <div style={{ background: C.ink, color: "#fff", borderRadius: 16, padding: "14px 16px", margin: "10px 0 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: 15.5 }}>{base.nome}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input value={g} onChange={(e) => setG(e.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" placeholder={String(base.porzioneG)} style={{ width: 60, background: "rgba(255,255,255,.16)", border: "none", borderRadius: 8, color: "#fff", fontSize: 15, fontWeight: 600, padding: "6px 8px", textAlign: "right", fontFamily: sans }} />
+                <span style={{ fontSize: 13, opacity: .85 }}>g</span>
+              </div>
+            </div>
+            {nb && chips(nb)}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: C.muted, marginBottom: 4 }}>Equivalenti</div>
+          <div style={{ fontSize: 11.5, color: C.muted, marginBottom: 8 }}>Grammatura per pareggiare {RL[ruoloAlimento(base)]}.</div>
+          {subs.map((s) => (
+            <div key={s.alimento.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 0", borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{catIcon(s.alimento.categoria)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}><span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{s.alimento.nome}</span><span style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.ink }}>{s.grammi} g</span></div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.ink }}>{r0(s.nutri.kcal)} kcal</span>
+                  {[["P", s.nutri.proteine, C.prot], ["C", s.nutri.carboidrati, C.carb], ["G", s.nutri.grassi, C.fat]].map(([l, v, col]) => <span key={l} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: col, padding: "2px 8px", borderRadius: 100 }}>{l} {r0(v)}g</span>)}
+                </div>
+              </div>
+            </div>
+          ))}
+          {!subs.length && <div style={{ fontSize: 13, color: C.muted, padding: "16px 0" }}>Nessuna sostituzione compatibile con i tuoi filtri (IBS/glutine/lattosio).</div>}
         </>
       )}
     </>
