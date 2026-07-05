@@ -276,17 +276,8 @@ export default function App() {
   const [store, setStore] = useState({
     profile: { name: "Giorgia", sex: "F", height: 152 },
     activePlan: "cafagna", checked: new Set(),
-    diary: [
-      { id: "d1", ts: Date.now() - 2 * 3600e3, meal: "Pranzo", food: "Riso con zucchine e pollo", nutri: { kcal: 430, p: 34, c: 52, f: 8 }, gonfiore: 1, dolore: 0, flatulenza: 1, regolarita: 2, note: "" },
-      { id: "d2", ts: Date.now() - 7 * 3600e3, meal: "Colazione", food: "Yogurt greco senza lattosio, kiwi, mandorle", nutri: { kcal: 250, p: 16, c: 22, f: 11 }, gonfiore: 0, dolore: 0, flatulenza: 0, regolarita: 0, note: "" },
-      { id: "d3", ts: Date.now() - 1 * 864e5, meal: "Cena", food: "Merluzzo, patate e carote", nutri: { kcal: 380, p: 35, c: 40, f: 8 }, gonfiore: 2, dolore: 1, flatulenza: 2, regolarita: 1, note: "" },
-      { id: "d4", ts: Date.now() - 2 * 864e5, meal: "Pranzo", food: "Pasta di grano saraceno con pomodoro", nutri: { kcal: 420, p: 12, c: 78, f: 6 }, gonfiore: 3, dolore: 2, flatulenza: 2, regolarita: 1, note: "Gonfiore importante" },
-    ],
-    measures: [
-      { id: "m0", ts: new Date("2026-04-13").getTime(), weight: 58, waist: 72, hips: 96, abdomen: 78, fm: 15 },
-      { id: "m1", ts: new Date("2026-05-18").getTime(), weight: 57.2, waist: 70, hips: 95, abdomen: 76, fm: 13.7 },
-      { id: "m2", ts: new Date("2026-06-22").getTime(), weight: 56.5, waist: 69, hips: 94, abdomen: 75, fm: 12.7 },
-    ],
+    diary: [],
+    measures: [],
     lastMeal: null,
   });
   const db = useMemo(() => makeLocalDb(setStore), []);
@@ -1294,12 +1285,20 @@ function Diario({ store, db, setSheet, toast }) {
   return (
     <>
       <Eyebrow>Storico</Eyebrow><H1>Diario</H1>
-      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 16px" }}>Pasti con valori nutrizionali, sintomi e foto.</p>
+      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px" }}>Pasti con valori nutrizionali, sintomi e foto.</p>
+      <Card>
+        <SectionH icon={<Plus size={17} color={C.ink} />}>Registra un pasto</SectionH>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+          {[["Colazione", Sparkles], ["Pranzo", UtensilsCrossed], ["Cena", Clock], ["Spuntino", Apple]].map(([l, Ic]) => (
+            <button key={l} onClick={() => setSheet({ type: "entry", data: { meal: l } })} style={quickBtn}><Ic size={22} color={C.ink} /><span style={{ fontSize: 11, fontWeight: 600, color: C.text }}>{l}</span></button>
+          ))}
+        </div>
+        <button onClick={() => setSheet({ type: "ai" })} style={{ ...btnGhost, width: "100%", justifyContent: "center", marginTop: 10 }}><Wand2 size={15} /> Oppure aggiungi con una foto</button>
+      </Card>
       {!store.diary.length ? (
-        <div style={{ textAlign: "center", padding: "44px 20px", color: C.muted }}>
-          <Camera size={44} color="#CBD9CE" style={{ marginBottom: 12 }} />
-          <div>Ancora nessun pasto registrato.</div>
-          <button onClick={() => setSheet({ type: "ai" })} style={{ ...btnPrimary, marginTop: 18, width: "auto" }}><Wand2 size={17} /> Aggiungi con una foto</button>
+        <div style={{ textAlign: "center", padding: "36px 20px", color: C.muted }}>
+          <Camera size={40} color="#CBD9CE" style={{ marginBottom: 10 }} />
+          <div>Ancora nessun pasto registrato. Usa i pulsanti qui sopra per iniziare.</div>
         </div>
       ) : Object.entries(grouped).map(([date, list]) => (
         <div key={date}>
@@ -1335,8 +1334,11 @@ function Diario({ store, db, setSheet, toast }) {
 function Sheet({ sheet, close, ctx }) {
   return (
     <div onClick={(e) => e.target === e.currentTarget && close()} style={{ position: "fixed", inset: 0, background: "rgba(30,50,40,.45)", zIndex: 60, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: C.cream, width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "92vh", overflowY: "auto", padding: "8px 18px 28px", animation: "qslideup .3s ease" }}>
-        <div style={{ width: 40, height: 4, borderRadius: 100, background: C.line, margin: "8px auto 14px" }} />
+      <div style={{ background: C.cream, width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "92vh", overflowY: "auto", padding: "8px 18px 28px", animation: "qslideup .3s ease", position: "relative" }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 -18px 10px", padding: "8px 18px", background: C.cream }}>
+          <div style={{ width: 40, height: 4, borderRadius: 100, background: C.line }} />
+          <button onClick={close} aria-label="Chiudi" style={{ position: "absolute", right: 14, top: 4, width: 34, height: 34, borderRadius: 100, border: "none", background: C.card, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SH }}><X size={19} /></button>
+        </div>
         {sheet.type === "swap" && <SwapSheet item={sheet.data} />}
         {sheet.type === "entry" && <EntrySheet data={sheet.data} ctx={ctx} close={close} />}
         {sheet.type === "ai" && <AiSheet ctx={ctx} close={close} />}
