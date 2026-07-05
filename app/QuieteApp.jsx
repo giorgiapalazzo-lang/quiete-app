@@ -12,6 +12,7 @@ import { calcolaSchema, ripartisciPasti, distribuisciMacro } from "../lib/nutrit
 import { ARCHETIPI, suggerisciArchetipo } from "../lib/nutrition/archetipi";
 import { generaPiano } from "../lib/nutrition/piano";
 import { ALIMENTI, ALIMENTI_BY_ID, sostituti, diStagione, ruoloAlimento, nutriPerGrammi, filtraAlimenti } from "../lib/nutrition/alimenti";
+import { RICETTE, filtraRicette, ingredientiScalati, macroRicetta } from "../lib/nutrition/ricette";
 import { signUp, signIn, signOut, onAuthStateChange, getUser } from "../lib/supabase/auth";
 import { getProfile, upsertProfile } from "../lib/supabase/profile";
 import { isSupabaseConfigured } from "../lib/supabase/client";
@@ -1445,7 +1446,7 @@ function Sheet({ sheet, close, ctx }) {
           {sheet.type === "plans" && <PlansSheet ctx={ctx} close={close} />}
           {sheet.type === "freq" && <FreqSheet ctx={ctx} />}
           {sheet.type === "foods" && <FoodsSheet />}
-          {sheet.type === "recipes" && <RecipesSheet />}
+          {sheet.type === "recipes" && <RecipesSheet ctx={ctx} />}
           {sheet.type === "report" && <ReportSheet ctx={ctx} />}
           {sheet.type === "profile" && <ProfileSheet ctx={ctx} />}
         </div>
@@ -1867,18 +1868,79 @@ function IntegrazioniSheet({ ctx }) {
   );
 }
 
-function RecipesSheet() {
-  return (
-    <>
-      <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, marginBottom: 12 }}>Ricette</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {RECIPES.map((r) => (
-          <div key={r.n} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, overflow: "hidden", boxShadow: SH }}>
-            <div style={{ position: "relative" }}><Ill type={r.ill} h={90} /><span style={{ position: "absolute", top: 8, right: 8, background: "rgba(255,255,255,.92)", borderRadius: 100, fontSize: 9, fontWeight: 700, color: C.ink, padding: "3px 8px", display: "flex", alignItems: "center", gap: 3 }}><Check size={11} /> FODMAP</span></div>
-            <div style={{ padding: "11px 12px" }}><div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.25, color: C.text }}>{r.n}</div><div style={{ fontSize: 10.5, color: C.muted, marginTop: 4 }}>{r.t}</div></div>
+function RecipesSheet({ ctx }) {
+  const cond = ctx?.store?.profile?.condizioni || [];
+  const restr = { fodmapBasso: cond.includes("ibs"), senzaGlutine: cond.includes("celiachia"), senzaLattosio: cond.includes("intolleranza_lattosio") };
+  const [pasto, setPasto] = useState("tutti");
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(null);
+  const [porz, setPorz] = useState(1);
+  const lista = filtraRicette({ pasto, ingrediente: q, ...restr });
+  const r = sel ? RICETTE.find((x) => x.id === sel) : null;
+  const PASTI = [["tutti", "Tutti"], ["colazione", "Colazione"], ["pranzo", "Pranzo"], ["cena", "Cena"], ["spuntino", "Spuntino"]];
+
+  if (r) {
+    const ingr = ingredientiScalati(r, porz);
+    const m = macroRicetta(r, porz);
+    return (
+      <>
+        <button onClick={() => setSel(null)} style={{ ...btnGhost, marginTop: 0 }}><ChevronLeft size={15} /> Tutte le ricette</button>
+        <div style={{ borderRadius: 16, overflow: "hidden", margin: "10px 0 12px" }}><Ill type={r.ill} h={120} /></div>
+        <div style={{ fontFamily: serif, fontSize: 21, fontWeight: 600, color: C.ink, lineHeight: 1.2 }}>{r.nome}</div>
+        <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, textTransform: "capitalize" }}>{r.pasto} · {r.tempo} min</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "10px 14px", margin: "14px 0" }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>Porzioni</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <button onClick={() => setPorz((p) => Math.max(1, p - 1))} style={{ width: 32, height: 32, borderRadius: 100, border: `1px solid ${C.line}`, background: "#fff", color: C.ink, fontSize: 18, cursor: "pointer", lineHeight: 1 }}>−</button>
+            <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, minWidth: 20, textAlign: "center" }}>{porz}</span>
+            <button onClick={() => setPorz((p) => Math.min(12, p + 1))} style={{ width: 32, height: 32, borderRadius: 100, border: `1px solid ${C.line}`, background: "#fff", color: C.ink, fontSize: 18, cursor: "pointer", lineHeight: 1 }}>+</button>
+          </div>
+        </div>
+        <div style={{ background: C.ink, color: "#fff", borderRadius: 14, padding: "12px 15px", marginBottom: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{r0(m.kcal)} kcal</span>
+          {[["Proteine", m.proteine, C.prot], ["Carbo", m.carboidrati, C.carb], ["Grassi", m.grassi, C.fat]].map(([l, v, col]) => <span key={l} style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: col, padding: "3px 10px", borderRadius: 100 }}>{l} {r0(v)}g</span>)}
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: C.muted, marginBottom: 8 }}>Ingredienti ({porz} {porz === 1 ? "persona" : "persone"})</div>
+        {ingr.map((i) => (
+          <div key={i.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.line}` }}>
+            <span style={{ fontSize: 13.5, color: C.text }}>{i.nome}</span>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: C.ink }}>{i.g} g</span>
           </div>
         ))}
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: C.muted, margin: "16px 0 8px" }}>Preparazione</div>
+        {r.passi.map((p, i) => (
+          <div key={i} style={{ display: "flex", gap: 11, padding: "7px 0", alignItems: "flex-start" }}>
+            <span style={{ width: 24, height: 24, borderRadius: 100, background: C.greenL, color: C.ink, fontWeight: 700, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: serif, flex: "0 0 auto" }}>{i + 1}</span>
+            <span style={{ fontSize: 13.5, color: C.text, lineHeight: 1.5 }}>{p}</span>
+          </div>
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, marginBottom: 4 }}>Ricette</div>
+      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 12 }}>Ingredienti dal tuo database, macro calcolati, riscalabili per più persone. Filtrate sulla tua dieta.</div>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10 }}>
+        {PASTI.map(([k, l]) => <button key={k} onClick={() => setPasto(k)} style={{ flex: "0 0 auto", border: `1px solid ${pasto === k ? C.ink : C.line}`, background: pasto === k ? C.ink : C.card, color: pasto === k ? "#fff" : C.muted, borderRadius: 100, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: sans }}>{l}</button>)}
       </div>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtra per alimento (es. pollo, avena, zucchine)" style={{ ...input, marginBottom: 12 }} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {lista.map((rec) => {
+          const m = macroRicetta(rec, 1);
+          return (
+            <div key={rec.id} onClick={() => { setSel(rec.id); setPorz(rec.porzioniBase); }} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, overflow: "hidden", boxShadow: SH, cursor: "pointer" }}>
+              <Ill type={rec.ill} h={80} />
+              <div style={{ padding: "10px 12px" }}>
+                <div style={{ fontWeight: 600, fontSize: 12.5, lineHeight: 1.25, color: C.text }}>{rec.nome}</div>
+                <div style={{ fontSize: 10.5, color: C.muted, marginTop: 4, textTransform: "capitalize" }}>{rec.pasto} · {rec.tempo} min · {r0(m.kcal)} kcal</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!lista.length && <div style={{ fontSize: 13, color: C.muted, padding: "20px 0", textAlign: "center" }}>Nessuna ricetta con questi filtri. Prova a togliere il filtro alimento o pasto.</div>}
     </>
   );
 }
