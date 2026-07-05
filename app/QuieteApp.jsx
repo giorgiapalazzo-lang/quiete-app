@@ -197,46 +197,47 @@ const LEVELS = ["Nessuno", "Lieve", "Moderato", "Severo"];
 // Weekly workout plan (integrated with the diet: training days -> more carbs at lunch)
 // Programma anti-gonfiore: corpo libero leggero + HIIT corsa, basso impatto
 // sull'intestino. Ogni esercizio ha un demo animato (vedi ExDemo).
+// liv = a quale durata compare l'esercizio: 1=già a 20min, 2=da 40min, 3=da 60min.
 const WORKOUT = [
-  { day: "Lun", title: "Core anti-gonfiore", dur: "20 min", train: true, focus: "Pancia & core profondo", ex: [
-    { n: "Respirazione diaframmatica", meta: "3 × 8 respiri", demo: "breath", tip: "Attiva il core profondo e sgonfia: inspira gonfiando la pancia, espira tirando l'ombelico dentro." },
-    { n: "Dead bug", meta: "3 × 10 per lato", demo: "hold", tip: "Schiena a terra ben aderente, muovi braccio e gamba opposti." },
-    { n: "Plank sugli avambracci", meta: "3 × 30\"", demo: "hold" },
-    { n: "Bird-dog", meta: "3 × 10 per lato", demo: "hold" },
-    { n: "Ponte glutei", meta: "3 × 15", demo: "squat" },
-    { n: "Cat-cow", meta: "10 lenti", demo: "flow", tip: "Mobilizza la colonna e aiuta la motilità intestinale." },
+  { day: "Lun", title: "Core anti-gonfiore", train: true, focus: "Pancia & core profondo", ex: [
+    { n: "Respirazione diaframmatica", meta: "3 × 8 respiri", demo: "breath", liv: 1, tip: "Attiva il core profondo e sgonfia: inspira gonfiando la pancia, espira tirando l'ombelico dentro." },
+    { n: "Dead bug", meta: "3 × 10 per lato", demo: "hold", liv: 1, tip: "Schiena a terra ben aderente, muovi braccio e gamba opposti." },
+    { n: "Plank sugli avambracci", meta: "3 × 30\"", demo: "hold", liv: 1 },
+    { n: "Bird-dog", meta: "3 × 10 per lato", demo: "hold", liv: 2 },
+    { n: "Ponte glutei", meta: "3 × 15", demo: "squat", liv: 2 },
+    { n: "Cat-cow", meta: "10 lenti", demo: "flow", liv: 3, tip: "Mobilizza la colonna e aiuta la motilità intestinale." },
   ] },
-  { day: "Mar", title: "HIIT corsa leggera", dur: "22 min", train: true, focus: "Cardio a intervalli", ex: [
-    { n: "Camminata di riscaldamento", meta: "5 min", demo: "walk" },
-    { n: "Corsa — sforzo medio", meta: "8 × 30\"", demo: "run", tip: "Ritmo in cui riesci a parlare a fatica, non uno sprint." },
-    { n: "Camminata di recupero", meta: "8 × 60\"", demo: "walk" },
-    { n: "Defaticamento camminando", meta: "3 min", demo: "walk" },
+  { day: "Mar", title: "HIIT corsa leggera", train: true, focus: "Cardio a intervalli", ex: [
+    { n: "Camminata di riscaldamento", meta: "5 min", demo: "walk", liv: 1 },
+    { n: "Corsa — sforzo medio", meta: "8 × 30\"", demo: "run", liv: 1, tip: "Ritmo in cui riesci a parlare a fatica, non uno sprint." },
+    { n: "Camminata di recupero", meta: "8 × 60\"", demo: "walk", liv: 1 },
+    { n: "Defaticamento camminando", meta: "3 min", demo: "walk", liv: 2 },
   ] },
-  { day: "Mer", title: "Mobilità & digestione", dur: "15 min", train: false, focus: "Recupero attivo", ex: [
-    { n: "Cat-cow", meta: "10 lenti", demo: "flow" },
-    { n: "Torsioni da seduta", meta: "8 per lato", demo: "flow", tip: "Le rotazioni del busto favoriscono il transito e sgonfiano." },
-    { n: "Camminata rilassata", meta: "20 min", demo: "walk", tip: "Una camminata dopo i pasti riduce gonfiore e picchi glicemici." },
+  { day: "Mer", title: "Mobilità & digestione", train: false, focus: "Recupero attivo", ex: [
+    { n: "Cat-cow", meta: "10 lenti", demo: "flow", liv: 1 },
+    { n: "Torsioni da seduta", meta: "8 per lato", demo: "flow", liv: 1, tip: "Le rotazioni del busto favoriscono il transito e sgonfiano." },
+    { n: "Camminata rilassata", meta: "20 min", demo: "walk", liv: 2, tip: "Una camminata dopo i pasti riduce gonfiore e picchi glicemici." },
   ] },
-  { day: "Gio", title: "Corpo libero total body", dur: "25 min", train: true, focus: "Forza leggera a casa", ex: [
-    { n: "Squat a corpo libero", meta: "3 × 12", demo: "squat" },
-    { n: "Affondi alternati", meta: "3 × 10 per gamba", demo: "squat" },
-    { n: "Push-up sulle ginocchia", meta: "3 × 8", demo: "hold" },
-    { n: "Mountain climber lenti", meta: "3 × 20", demo: "run", tip: "Controllati: avvicina il ginocchio al petto senza rimbalzare." },
-    { n: "Plank up-down", meta: "3 × 8", demo: "hold" },
+  { day: "Gio", title: "Corpo libero total body", train: true, focus: "Forza leggera a casa", ex: [
+    { n: "Squat a corpo libero", meta: "3 × 12", demo: "squat", liv: 1 },
+    { n: "Affondi alternati", meta: "3 × 10 per gamba", demo: "squat", liv: 1 },
+    { n: "Push-up sulle ginocchia", meta: "3 × 8", demo: "hold", liv: 2 },
+    { n: "Mountain climber lenti", meta: "3 × 20", demo: "run", liv: 2, tip: "Controllati: avvicina il ginocchio al petto senza rimbalzare." },
+    { n: "Plank up-down", meta: "3 × 8", demo: "hold", liv: 3 },
   ] },
-  { day: "Ven", title: "HIIT corsa + core", dur: "25 min", train: true, focus: "Cardio + pancia", ex: [
-    { n: "Corsa a intervalli", meta: "6 × 40\"", demo: "run" },
-    { n: "Camminata di recupero", meta: "6 × 60\"", demo: "walk" },
-    { n: "Jumping jack basso impatto", meta: "3 × 20", demo: "jump", tip: "Se saltare dà fastidio, apri le gambe con un passo laterale." },
-    { n: "Plank", meta: "3 × 30\"", demo: "hold" },
+  { day: "Ven", title: "HIIT corsa + core", train: true, focus: "Cardio + pancia", ex: [
+    { n: "Corsa a intervalli", meta: "6 × 40\"", demo: "run", liv: 1 },
+    { n: "Camminata di recupero", meta: "6 × 60\"", demo: "walk", liv: 1 },
+    { n: "Jumping jack basso impatto", meta: "3 × 20", demo: "jump", liv: 2, tip: "Se saltare dà fastidio, apri le gambe con un passo laterale." },
+    { n: "Plank", meta: "3 × 30\"", demo: "hold", liv: 3 },
   ] },
-  { day: "Sab", title: "Camminata lunga", dur: "40 min", train: false, focus: "Cardio dolce", ex: [
-    { n: "Camminata a passo svelto", meta: "35 min", demo: "walk" },
-    { n: "Stretching completo", meta: "5 min", demo: "flow" },
+  { day: "Sab", title: "Camminata lunga", train: false, focus: "Cardio dolce", ex: [
+    { n: "Camminata a passo svelto", meta: "35 min", demo: "walk", liv: 1 },
+    { n: "Stretching completo", meta: "5 min", demo: "flow", liv: 2 },
   ] },
-  { day: "Dom", title: "Riposo & respiro", dur: "10 min", train: false, focus: "Recupero", ex: [
-    { n: "Respirazione diaframmatica", meta: "5 min", demo: "breath" },
-    { n: "Passeggiata leggera", meta: "facoltativa", demo: "walk" },
+  { day: "Dom", title: "Riposo & respiro", train: false, focus: "Recupero", ex: [
+    { n: "Respirazione diaframmatica", meta: "5 min", demo: "breath", liv: 1 },
+    { n: "Passeggiata leggera", meta: "facoltativa", demo: "walk", liv: 2 },
   ] },
 ];
 
@@ -1250,26 +1251,33 @@ function Spesa({ store, db, tf, setTf, piano }) {
    ============================================================ */
 function Allenamento() {
   const [d, setD] = useState(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
+  const [dur, setDur] = useState(40);
   const w = WORKOUT[d];
   const trainDays = WORKOUT.filter((x) => x.train).length;
+  const level = dur === 20 ? 1 : dur === 60 ? 3 : 2;
+  const exVis = w.ex.filter((e) => e.liv <= level);
+  const ripeti = w.train && dur === 60;
   return (
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <Eyebrow>Movimento · anti-gonfiore</Eyebrow><H1>Allenamento</H1>
-      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px", lineHeight: 1.5 }}>Corpo libero leggero e HIIT di corsa, a basso impatto sull'intestino: {trainDays} sessioni + mobilità. Ogni esercizio ha la sua animazione.</p>
+      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px", lineHeight: 1.5 }}>Corpo libero leggero e HIIT di corsa, a basso impatto sull'intestino: {trainDays} sessioni + mobilità. Scegli la durata.</p>
       <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 12 }}>
         {DAYS.map((x, i) => <button key={x} onClick={() => setD(i)} style={{ flex: "0 0 auto", border: `1px solid ${i === d ? C.ink : C.line}`, background: i === d ? C.ink : C.card, color: i === d ? "#fff" : C.muted, borderRadius: 100, padding: "9px 15px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: sans, position: "relative" }}>{x}{WORKOUT[i].train && <span style={{ position: "absolute", top: 5, right: 7, width: 6, height: 6, borderRadius: 100, background: i === d ? C.gold : C.green }} />}</button>)}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {[20, 40, 60].map((m) => <button key={m} onClick={() => setDur(m)} style={{ flex: 1, border: `1px solid ${dur === m ? C.ink : C.line}`, background: dur === m ? C.ink : C.card, color: dur === m ? "#fff" : C.muted, borderRadius: 12, padding: "10px 0", fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: sans }}>{m} min</button>)}
       </div>
       <div style={{ borderRadius: 22, padding: 20, marginBottom: 14, color: "#fff", background: w.train ? C.ink : C.green, boxShadow: SHL, position: "relative", overflow: "hidden" }}>
         <BotanicalBg />
         <div style={{ position: "relative" }}>
-          <div style={{ fontSize: 11.5, opacity: .85, fontWeight: 600, letterSpacing: ".04em", display: "flex", alignItems: "center", gap: 6 }}>{w.train ? <Dumbbell size={14} /> : <Footprints size={14} />} {w.dur} · {w.focus}</div>
+          <div style={{ fontSize: 11.5, opacity: .85, fontWeight: 600, letterSpacing: ".04em", display: "flex", alignItems: "center", gap: 6 }}>{w.train ? <Dumbbell size={14} /> : <Footprints size={14} />} {dur} min · {w.focus}</div>
           <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, marginTop: 6 }}>{w.title}</div>
         </div>
       </div>
       <Card>
         <SectionH icon={<Activity size={17} color={C.ink} />}>Esercizi</SectionH>
-        {w.ex.map((e, i) => (
-          <div key={i} style={{ display: "flex", gap: 13, padding: "11px 0", borderBottom: i < w.ex.length - 1 ? `1px solid ${C.line}` : "none", alignItems: "center" }}>
+        {exVis.map((e, i) => (
+          <div key={i} style={{ display: "flex", gap: 13, padding: "11px 0", borderBottom: i < exVis.length - 1 ? `1px solid ${C.line}` : "none", alignItems: "center" }}>
             <ExDemo kind={e.demo} size={54} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600, color: C.text }}>{e.n}</div>
@@ -1278,6 +1286,7 @@ function Allenamento() {
             </div>
           </div>
         ))}
+        {ripeti && <div style={{ fontSize: 12, color: C.muted, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}`, lineHeight: 1.5 }}>Per i 60 minuti: ripeti il circuito 2 volte con 60–90″ di recupero tra i giri.</div>}
       </Card>
       {w.train ? (
         <div style={{ background: C.goldBg, borderRadius: 14, padding: "12px 14px", fontSize: 12.5, color: "#8a6412", display: "flex", gap: 9, marginBottom: 14 }}>
