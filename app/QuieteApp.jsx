@@ -492,7 +492,7 @@ export default function App() {
         {tab === "diario" && <Diario {...{ store, db, setSheet, toast }} />}
       </main>
 
-      <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 40, background: "rgba(255,253,249,.96)", backdropFilter: "blur(12px)", borderTop: `1px solid ${C.line}` }}>
+      <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 40, background: "rgba(255,253,249,.96)", backdropFilter: "blur(12px)", borderTop: `1px solid ${C.line}`, paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ maxWidth: 440, margin: "0 auto", display: "flex" }}>
           {[["oggi", Home, "Oggi"], ["piano", CalendarDays, "Piano"], ["spesa", ShoppingCart, "Spesa"], ["allenamento", Dumbbell, "Workout"], ["diario", Camera, "Diario"]].map(([k, Ic, l]) => (
             <button key={k} onClick={() => go(k)} style={{ flex: 1, background: "none", border: "none", padding: "10px 0 9px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", color: tab === k ? C.ink : C.muted, position: "relative", fontFamily: sans }}>
@@ -517,7 +517,7 @@ const OnbBg = ({ children }) => (
     {children}
   </div>
 );
-const field = { width: "100%", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "13px 14px", fontSize: 15, fontFamily: sans, color: C.text, outline: "none" };
+const field = { width: "100%", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "13px 14px", fontSize: 16, fontFamily: sans, color: C.text, outline: "none" };
 const fieldLabel = { fontSize: 12.5, fontWeight: 600, color: C.muted, marginBottom: 6, display: "block" };
 
 function Welcome({ onStart, onLogin, isDesktop }) {
@@ -2158,5 +2158,5 @@ function useToast() {
 const btnPrimary = { width: "100%", background: C.ink, color: "#fff", border: "none", borderRadius: 100, padding: "15px 22px", fontFamily: sans, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: SH };
 const btnGhost = { marginTop: 13, background: "none", border: `1px solid ${C.line}`, color: C.muted, fontSize: 12.5, fontWeight: 600, padding: "9px 16px", borderRadius: 100, cursor: "pointer", fontFamily: sans, display: "inline-flex", alignItems: "center", gap: 6 };
 const quickBtn = { background: "#F7FAF6", border: `1px solid ${C.line}`, borderRadius: 15, padding: "13px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, cursor: "pointer", fontFamily: sans };
-const input = { width: "100%", border: `1px solid ${C.line}`, borderRadius: 12, padding: 12, fontFamily: sans, fontSize: 14.5, background: "#fff", color: C.text, resize: "vertical" };
+const input = { width: "100%", border: `1px solid ${C.line}`, borderRadius: 12, padding: 12, fontFamily: sans, fontSize: 16, background: "#fff", color: C.text, resize: "vertical" };
 const stepBtn = { width: 26, height: 26, borderRadius: 100, border: "none", background: C.greenL, color: C.ink, fontSize: 16, fontWeight: 700, cursor: "pointer", lineHeight: 1 };
