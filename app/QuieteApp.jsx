@@ -254,7 +254,21 @@ function makeLocalDb(setStore) {
     measurements: { async add(m) { await tick(); setStore((s) => ({ ...s, measures: [...s.measures, { ...m, id: "m" + Date.now() }].sort((a, b) => a.ts - b.ts) })); } },
     plans: { async setActive(id) { setStore((s) => ({ ...s, activePlan: id })); } },
     meals: { async logNow(ts) { setStore((s) => ({ ...s, lastMeal: ts })); } },
-    shopping: { async toggle(k) { setStore((s) => { const c = new Set(s.checked); c.has(k) ? c.delete(k) : c.add(k); return { ...s, checked: c }; }); } },
+    shopping: {
+      async toggle(k) { setStore((s) => { const c = new Set(s.checked); c.has(k) ? c.delete(k) : c.add(k); return { ...s, checked: c }; }); },
+      async addItem(it) { setStore((s) => ({ ...s, spesaExtra: [...s.spesaExtra, { id: "sx" + Date.now(), ...it }] })); },
+      async setQty(id, g) { setStore((s) => ({ ...s, spesaExtra: s.spesaExtra.map((x) => (x.id === id ? { ...x, g } : x)) })); },
+      async removeItem(id) { setStore((s) => ({ ...s, spesaExtra: s.spesaExtra.filter((x) => x.id !== id), checked: (() => { const c = new Set(s.checked); return c; })() })); },
+    },
+    supps: {
+      async add(sp) { setStore((s) => ({ ...s, supps: [...s.supps, { id: "sup" + Date.now(), ...sp }] })); },
+      async update(id, patch) { setStore((s) => ({ ...s, supps: s.supps.map((x) => (x.id === id ? { ...x, ...patch } : x)) })); },
+      async remove(id) { setStore((s) => ({ ...s, supps: s.supps.filter((x) => x.id !== id) })); },
+    },
+    sostituzioni: {
+      async apply(origId, sost) { setStore((s) => ({ ...s, sostituzioni: { ...s.sostituzioni, [origId]: sost } })); },
+      async clear(origId) { setStore((s) => { const m = { ...s.sostituzioni }; delete m[origId]; return { ...s, sostituzioni: m }; }); },
+    },
     // AI vision — in prod this can also run as a Supabase Edge Function
     async analyzePhoto(base64, mime) {
       const prompt = `Sei un dietista esperto. Analizza la foto di questo pasto e stima porzioni e valori nutrizionali usando il piatto e le posate come riferimento di scala. Rispondi SOLO con JSON valido, senza testo prima o dopo, in questo formato esatto:
@@ -284,10 +298,44 @@ export default function App() {
     activePlan: "cafagna", checked: new Set(),
     diary: [],
     measures: [],
+    supps: SUPPS.map((s, i) => ({ id: "sup" + i, ...s })),
+    sostituzioni: {}, // { [foodId]: { id, n, g } } — sostituzioni applicate al piano
+    spesaExtra: [], // alimenti aggiunti a mano alla spesa: { id, n, g, cat }
     lastMeal: null,
   });
   const db = useMemo(() => makeLocalDb(setStore), []);
   const toast = useToast();
+  const dataLoaded = useRef(false);
+  // Carica i dati utente (diario, integrazioni, sostituzioni, spesa) da localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("quiete_data");
+      if (raw) {
+        const d = JSON.parse(raw);
+        setStore((s) => ({
+          ...s,
+          diary: d.diary ?? s.diary,
+          measures: d.measures ?? s.measures,
+          supps: d.supps ?? s.supps,
+          sostituzioni: d.sostituzioni ?? s.sostituzioni,
+          spesaExtra: d.spesaExtra ?? s.spesaExtra,
+          checked: new Set(d.checked ?? []),
+          lastMeal: d.lastMeal ?? s.lastMeal,
+        }));
+      }
+    } catch {}
+    dataLoaded.current = true;
+  }, []);
+  useEffect(() => {
+    if (!dataLoaded.current) return;
+    try {
+      localStorage.setItem("quiete_data", JSON.stringify({
+        diary: store.diary, measures: store.measures, supps: store.supps,
+        sostituzioni: store.sostituzioni, spesaExtra: store.spesaExtra,
+        checked: [...store.checked], lastMeal: store.lastMeal,
+      }));
+    } catch {}
+  }, [store.diary, store.measures, store.supps, store.sostituzioni, store.spesaExtra, store.checked, store.lastMeal]);
   const [screen, setScreen] = useState("welcome");
   const [tab, setTab] = useState("oggi");
   const [sheet, setSheet] = useState(null);
@@ -1073,16 +1121,21 @@ function Oggi({ plan, store, db, setSheet, go, toast, day, piano, isDesktop }) {
     </div>
   );
 
+  const suppsList = store.supps || [];
   const suppsCard = (
     <Card>
-      <SectionH icon={<PillIcon size={17} color={C.ink} />}>Integrazione di oggi</SectionH>
-      {SUPPS.map((s) => (
-        <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <SectionH icon={<PillIcon size={17} color={C.ink} />}>Integrazione</SectionH>
+        <button onClick={() => setSheet({ type: "supps" })} style={{ background: "none", border: "none", color: C.ink, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: sans, display: "flex", alignItems: "center", gap: 4 }}><Plus size={14} /> Gestisci</button>
+      </div>
+      {suppsList.map((s) => (
+        <div key={s.id || s.n} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: C.goldBg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><PillIcon size={16} color="#96702A" /></div>
-          <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13.5, color: C.text }}>{s.n}</div><div style={{ fontSize: 12, color: C.muted }}>{s.dose} · {s.when}</div></div>
-          <span style={{ fontSize: 12, color: C.gold, fontWeight: 600 }}>{s.time}</span>
+          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 13.5, color: C.text }}>{s.n}</div><div style={{ fontSize: 12, color: C.muted }}>{s.dose}{s.when ? " · " + s.when : ""}</div></div>
+          {s.time && <span style={{ fontSize: 12, color: C.gold, fontWeight: 600 }}>{s.time}</span>}
         </div>
       ))}
+      {!suppsList.length && <div style={{ fontSize: 12.5, color: C.muted, padding: "8px 0" }}>Nessun integratore. Tocca "Gestisci" per aggiungerne.</div>}
     </Card>
   );
 
@@ -1125,10 +1178,12 @@ function Piano({ day, setDay, setSheet, piano, store }) {
     if (!profile.assessmentDone || !profile.macro || !Number.isFinite(profile.kcalObiettivo)) return piano;
     try { return generaPiano({ kcalObiettivo: profile.kcalObiettivo, macro: profile.macro, condizioni: profile.condizioni || [], archetipo: profile.archetipo || "mediterranea", variante: vari }); } catch { return piano; }
   }, [profile, vari, piano]);
+  const sost = store?.sostituzioni || {};
+  const applySost = (items) => (items || []).map((it) => { const sub = it.id && sost[it.id]; return sub ? { ...it, n: sub.n, g: sub.g, id: sub.id } : it; });
   let meals;
   if (pianoV) {
     const g = pianoV.giorni[day];
-    meals = [pianoV.colazione, pianoV.spuntino, { slot: "Pranzo", items: g.pranzo }, pianoV.merenda, { slot: "Cena", items: g.cena }, pianoV.olio];
+    meals = [pianoV.colazione, pianoV.spuntino, { slot: "Pranzo", items: g.pranzo }, pianoV.merenda, { slot: "Cena", items: g.cena }, pianoV.olio].map((m) => ({ ...m, items: applySost(m.items) }));
   } else {
     meals = [COLAZIONE, SP_AM, { slot: "Pranzo", items: WEEK[d].pranzo }, MERENDA, { slot: "Cena", items: WEEK[d].cena }, EVO];
   }
@@ -1197,52 +1252,67 @@ function Piano({ day, setDay, setSheet, piano, store }) {
    SPESA (shopping list from the plan)
    ============================================================ */
 function Spesa({ store, db, tf, setTf, piano }) {
+  const [q, setQ] = useState("");
+  const sost = store.sostituzioni || {};
+  const catAlim = (a) => (a.categoria === "carne" || a.categoria === "pesce") ? "Carne & pesce" : a.categoria === "verdura" ? "Verdura" : a.categoria === "frutta" ? "Frutta" : (a.categoria === "uova" || a.categoria === "latticini") ? "Frigo" : "Dispensa";
+  const catName = (n) => { const k = nutriKey(n); if (["pollo", "merluzzo", "salmone", "gamberi", "tonno", "seppia", "vitello", "bresaola"].includes(k)) return "Carne & pesce"; if (["zucchine", "carote", "spinaci", "verdura"].includes(k)) return "Verdura"; if (["kiwi", "fragole", "frutta"].includes(k)) return "Frutta"; if (["yogurt", "uova", "formaggio"].includes(k)) return "Frigo"; return "Dispensa"; };
   const rows = useMemo(() => {
     const mult = tf === "day" ? 1 / 7 : tf === "month" ? 4.345 : 1;
     const agg = {};
+    const add = (it) => { const sub = it.id && sost[it.id]; const nm = sub ? sub.n : it.n; const gg = sub ? sub.g : it.g; if (!gg) return; agg[nm] = (agg[nm] || 0) + gg; };
     if (piano) {
-      piano.giorni.forEach((g) => {
-        [...piano.colazione.items, ...piano.spuntino.items, ...g.pranzo, ...piano.merenda.items, ...g.cena, ...piano.olio.items].forEach((it) => {
-          if (!it.g) return; const key = it.n; agg[key] = (agg[key] || 0) + it.g;
-        });
-      });
+      piano.giorni.forEach((g) => [...piano.colazione.items, ...piano.spuntino.items, ...g.pranzo, ...piano.merenda.items, ...g.cena, ...piano.olio.items].forEach(add));
     } else {
-      DAYS.forEach((d) => [...COLAZIONE.items, ...SP_AM.items, ...WEEK[d].pranzo, ...MERENDA.items, ...WEEK[d].cena, ...EVO.items].forEach((it) => {
-        if (!it.g) return; const key = it.n; agg[key] = (agg[key] || 0) + it.g;
-      }));
+      DAYS.forEach((d) => [...COLAZIONE.items, ...SP_AM.items, ...WEEK[d].pranzo, ...MERENDA.items, ...WEEK[d].cena, ...EVO.items].forEach(add));
     }
-    const cat = (n) => { const k = nutriKey(n); if (["pollo", "merluzzo", "salmone", "gamberi", "tonno", "seppia", "vitello", "bresaola"].includes(k)) return "Carne & pesce"; if (["zucchine", "carote", "spinaci", "verdura"].includes(k)) return "Verdura"; if (["kiwi", "fragole", "frutta"].includes(k)) return "Frutta"; if (["yogurt", "uova", "formaggio"].includes(k)) return "Frigo"; return "Dispensa"; };
-    return Object.entries(agg).map(([n, g]) => ({ n, g: g * mult, cat: cat(n) }));
-  }, [tf, piano]);
-  const byCat = {}; rows.forEach((r) => (byCat[r.cat] = byCat[r.cat] || []).push(r));
+    return Object.entries(agg).map(([n, g]) => ({ n, g: g * mult, cat: catName(n), fromPlan: true }));
+  }, [tf, piano, sost]);
+  const extra = (store.spesaExtra || []).map((x) => ({ ...x, cat: x.cat || "Dispensa", fromPlan: false }));
+  const byCat = {}; [...rows, ...extra].forEach((r) => (byCat[r.cat] = byCat[r.cat] || []).push(r));
   const fmt = (g) => g >= 1000 ? (g / 1000).toFixed(1) + " kg" : Math.round(g) + " g";
+  const results = q.trim().length >= 2 ? ALIMENTI.filter((a) => a.nome.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : [];
   return (
-    <>
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <Eyebrow>Collegata al piano</Eyebrow><H1>Lista della spesa</H1>
-      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px" }}>Generata dagli alimenti del piano settimanale.</p>
-      <div style={{ display: "flex", background: C.greenL, borderRadius: 13, padding: 4, gap: 3, marginBottom: 16 }}>
+      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px" }}>Dagli alimenti del piano (con le sostituzioni applicate). Aggiungi altri alimenti e regola i pesi.</p>
+      <div style={{ display: "flex", background: C.greenL, borderRadius: 13, padding: 4, gap: 3, marginBottom: 12 }}>
         {[["day", "Giorno"], ["week", "Settimana"], ["month", "Mese"]].map(([k, l]) => <button key={k} onClick={() => setTf(k)} style={{ flex: 1, border: "none", background: tf === k ? "#fff" : "none", boxShadow: tf === k ? "0 2px 7px -3px rgba(0,0,0,.2)" : "none", borderRadius: 10, padding: "10px 4px", fontFamily: sans, fontWeight: 600, fontSize: 12.5, color: C.ink, cursor: "pointer" }}>{l}</button>)}
       </div>
+      <Card style={{ padding: 14 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Aggiungi un alimento alla spesa…" style={input} />
+        {results.map((a) => (
+          <div key={a.id} onClick={() => { db.shopping.addItem({ n: a.nome, g: a.porzioneG, cat: catAlim(a) }); setQ(""); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{catIcon(a.categoria)}</div>
+            <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: C.text }}>{a.nome}</span>
+            <Plus size={17} color={C.ink} />
+          </div>
+        ))}
+      </Card>
       {Object.entries(byCat).map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 6 }}>
           <div style={{ fontSize: 11.5, letterSpacing: ".04em", textTransform: "uppercase", color: C.muted, fontWeight: 700, margin: "16px 2px 6px" }}>{cat}</div>
-          {items.map((r) => {
+          {items.map((r) => r.fromPlan ? (() => {
             const ck = store.checked.has(r.n);
             return (
-              <div key={r.n} onClick={() => db.shopping.toggle(r.n)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7, cursor: "pointer" }}>
+              <div key={"p" + r.n} onClick={() => db.shopping.toggle(r.n)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7, cursor: "pointer" }}>
                 <span style={{ width: 22, height: 22, flex: "0 0 auto", border: `2px solid ${ck ? C.ink : C.line}`, borderRadius: 7, background: ck ? C.ink : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>{ck && <Check size={14} />}</span>
                 <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: C.text, textDecoration: ck ? "line-through" : "none", opacity: ck ? .5 : 1 }}>{r.n}</span>
                 <span style={{ fontSize: 12.5, color: C.muted, fontWeight: 600 }}>{fmt(r.g)}</span>
               </div>
             );
-          })}
+          })() : (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7 }}>
+              <Leaf size={15} color={C.gold} style={{ flex: "0 0 auto" }} />
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: C.text, minWidth: 0 }}>{r.n}</span>
+              <input value={r.g} onChange={(e) => db.shopping.setQty(r.id, +e.target.value.replace(/[^0-9]/g, "") || 0)} inputMode="numeric" style={{ width: 58, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontFamily: sans, fontSize: 16, textAlign: "right", background: "#fff", color: C.text }} />
+              <span style={{ fontSize: 12, color: C.muted }}>g</span>
+              <button onClick={() => db.shopping.removeItem(r.id)} aria-label="Elimina" style={{ background: "none", border: "none", color: C.clay, cursor: "pointer", display: "flex" }}><Trash2 size={15} /></button>
+            </div>
+          ))}
         </div>
       ))}
-      <div style={{ background: C.goldBg, borderRadius: 12, padding: "11px 13px", fontSize: 12, color: "#8a6412", marginTop: 12, display: "flex", gap: 8 }}>
-        <Info size={15} style={{ flex: "0 0 auto", marginTop: 1 }} /><span>Le quantità cambiano tra le sostituzioni scelte: qui è mostrato l'alimento base del piano.</span>
-      </div>
       <Disc />
-    </>
+    </div>
   );
 }
 
@@ -1368,7 +1438,8 @@ function Sheet({ sheet, close, ctx }) {
         </div>
         <div style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "14px 18px 28px" }}>
           {sheet.type === "swap" && <SwapSheet item={sheet.data} />}
-          {sheet.type === "sostituzioni" && <SostituzioniSheet ctx={ctx} data={sheet.data} />}
+          {sheet.type === "sostituzioni" && <SostituzioniSheet ctx={ctx} data={sheet.data} close={close} />}
+        {sheet.type === "supps" && <IntegrazioniSheet ctx={ctx} />}
           {sheet.type === "entry" && <EntrySheet data={sheet.data} ctx={ctx} close={close} />}
           {sheet.type === "ai" && <AiSheet ctx={ctx} close={close} />}
           {sheet.type === "plans" && <PlansSheet ctx={ctx} close={close} />}
@@ -1491,9 +1562,10 @@ function AiSheet({ ctx, close }) {
   );
 }
 
-function SostituzioniSheet({ ctx, data }) {
+function SostituzioniSheet({ ctx, data, close }) {
   const cond = ctx.store.profile.condizioni || [];
   const restr = { fodmapBasso: cond.includes("ibs"), senzaGlutine: cond.includes("celiachia"), senzaLattosio: cond.includes("intolleranza_lattosio") };
+  const puoiApplicare = !!data?.id; // aperto da un cibo del piano → si può sostituire
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(data?.id || null);
   const [g, setG] = useState(String(data?.g || (data?.id && ALIMENTI_BY_ID[data.id]?.porzioneG) || ""));
@@ -1563,8 +1635,14 @@ function SostituzioniSheet({ ctx, data }) {
                   {[["P", s.nutri.proteine, C.prot], ["C", s.nutri.carboidrati, C.carb], ["G", s.nutri.grassi, C.fat]].map(([l, v, col]) => <span key={l} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: col, padding: "2px 8px", borderRadius: 100 }}>{l} {r0(v)}g</span>)}
                 </div>
               </div>
+              {puoiApplicare && sel === data.id && (
+                <button onClick={() => { ctx.db.sostituzioni.apply(data.id, { id: s.alimento.id, n: s.alimento.nome, g: s.grammi }); ctx.toast.show(`Sostituito: ${s.alimento.nome}`); close && close(); }} style={{ flex: "0 0 auto", background: C.ink, color: "#fff", border: "none", borderRadius: 100, padding: "7px 13px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: sans }}>Usa</button>
+              )}
             </div>
           ))}
+          {puoiApplicare && sel === data.id && ctx.store.sostituzioni[data.id] && (
+            <button onClick={() => { ctx.db.sostituzioni.clear(data.id); ctx.toast.show("Sostituzione rimossa"); close && close(); }} style={{ ...btnGhost, width: "100%", justifyContent: "center" }}>Ripristina l'originale</button>
+          )}
           {!subs.length && <div style={{ fontSize: 13, color: C.muted, padding: "16px 0" }}>Nessuna sostituzione compatibile con i tuoi filtri (IBS/glutine/lattosio).</div>}
         </>
       )}
@@ -1740,6 +1818,51 @@ function FoodsSheet() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{cat.items.map((it) => <span key={it} style={{ background: tone.bg, border: `1px solid ${tone.bd}`, color: tone.fg, borderRadius: 100, padding: "7px 12px", fontSize: 12, fontWeight: 500 }}>{it}</span>)}</div>
         </div>
       ); })}
+    </>
+  );
+}
+
+function IntegrazioniSheet({ ctx }) {
+  const supps = ctx.store.supps || [];
+  const [edit, setEdit] = useState(null); // null = lista, "new" o id = form
+  const [f, setF] = useState({ n: "", dose: "", when: "", time: "" });
+  const startNew = () => { setF({ n: "", dose: "", when: "", time: "" }); setEdit("new"); };
+  const startEdit = (s) => { setF({ n: s.n || "", dose: s.dose || "", when: s.when || "", time: s.time || "" }); setEdit(s.id); };
+  const save = () => {
+    if (!f.n.trim()) { ctx.toast.show("Inserisci il nome"); return; }
+    if (edit === "new") ctx.db.supps.add(f); else ctx.db.supps.update(edit, f);
+    setEdit(null); ctx.toast.show("Salvato");
+  };
+  return (
+    <>
+      <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.ink, marginBottom: 4 }}>Integrazione</div>
+      <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 14 }}>Aggiungi, modifica o elimina i tuoi integratori.</div>
+      {edit === null ? (
+        <>
+          {supps.map((s) => (
+            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 0", borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: C.goldBg, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}><PillIcon size={16} color="#96702A" /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5, color: C.text }}>{s.n}</div>
+                <div style={{ fontSize: 12, color: C.muted }}>{[s.dose, s.when, s.time].filter(Boolean).join(" · ")}</div>
+              </div>
+              <button onClick={() => startEdit(s)} aria-label="Modifica" style={{ background: "none", border: "none", color: C.ink, cursor: "pointer", display: "flex", padding: 6 }}><FileText size={16} /></button>
+              <button onClick={() => { ctx.db.supps.remove(s.id); ctx.toast.show("Eliminato"); }} aria-label="Elimina" style={{ background: "none", border: "none", color: C.clay, cursor: "pointer", display: "flex", padding: 6 }}><Trash2 size={16} /></button>
+            </div>
+          ))}
+          {!supps.length && <div style={{ fontSize: 13, color: C.muted, padding: "14px 0" }}>Nessun integratore.</div>}
+          <button onClick={startNew} style={{ ...btnPrimary, marginTop: 14 }}><Plus size={18} /> Aggiungi integratore</button>
+        </>
+      ) : (
+        <>
+          <Field label="Nome"><input value={f.n} onChange={(e) => setF({ ...f, n: e.target.value })} placeholder="Es. Vitamina D" style={input} /></Field>
+          <Field label="Dose"><input value={f.dose} onChange={(e) => setF({ ...f, dose: e.target.value })} placeholder="Es. 2000 UI" style={input} /></Field>
+          <Field label="Quando"><input value={f.when} onChange={(e) => setF({ ...f, when: e.target.value })} placeholder="Es. Con un pasto" style={input} /></Field>
+          <Field label="Orario"><input value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} placeholder="Es. 13:00" style={input} /></Field>
+          <button onClick={save} style={btnPrimary}><Check size={18} /> Salva</button>
+          <button onClick={() => setEdit(null)} style={{ ...btnGhost, width: "100%", justifyContent: "center" }}>Annulla</button>
+        </>
+      )}
     </>
   );
 }
