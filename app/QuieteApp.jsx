@@ -1342,21 +1342,25 @@ function Diario({ store, db, setSheet, toast }) {
 function Sheet({ sheet, close, ctx }) {
   return (
     <div onClick={(e) => e.target === e.currentTarget && close()} style={{ position: "fixed", inset: 0, background: "rgba(30,50,40,.45)", zIndex: 60, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: C.cream, width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "92vh", overflowY: "auto", padding: "8px 18px 28px", animation: "qslideup .3s ease", position: "relative" }}>
-        <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 -18px 10px", padding: "8px 18px", background: C.cream }}>
+      {/* Sheet: colonna flex con header FISSO (X sempre raggiungibile) + corpo scrollabile.
+          Altezza max in dvh così la tastiera mobile non spinge la X fuori schermo. */}
+      <div style={{ background: C.cream, width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "90dvh", display: "flex", flexDirection: "column", overflow: "hidden", animation: "qslideup .3s ease" }}>
+        <div style={{ flex: "0 0 auto", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 18px 8px", borderBottom: `1px solid ${C.line}` }}>
           <div style={{ width: 40, height: 4, borderRadius: 100, background: C.line }} />
-          <button onClick={close} aria-label="Chiudi" style={{ position: "absolute", right: 14, top: 4, width: 34, height: 34, borderRadius: 100, border: "none", background: C.card, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SH }}><X size={19} /></button>
+          <button onClick={close} aria-label="Chiudi" style={{ position: "absolute", right: 14, top: 6, width: 34, height: 34, borderRadius: 100, border: "none", background: C.card, color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: SH }}><X size={19} /></button>
         </div>
-        {sheet.type === "swap" && <SwapSheet item={sheet.data} />}
-        {sheet.type === "sostituzioni" && <SostituzioniSheet ctx={ctx} data={sheet.data} />}
-        {sheet.type === "entry" && <EntrySheet data={sheet.data} ctx={ctx} close={close} />}
-        {sheet.type === "ai" && <AiSheet ctx={ctx} close={close} />}
-        {sheet.type === "plans" && <PlansSheet ctx={ctx} close={close} />}
-        {sheet.type === "freq" && <FreqSheet ctx={ctx} />}
-        {sheet.type === "foods" && <FoodsSheet />}
-        {sheet.type === "recipes" && <RecipesSheet />}
-        {sheet.type === "report" && <ReportSheet ctx={ctx} />}
-        {sheet.type === "profile" && <ProfileSheet ctx={ctx} />}
+        <div style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "14px 18px 28px" }}>
+          {sheet.type === "swap" && <SwapSheet item={sheet.data} />}
+          {sheet.type === "sostituzioni" && <SostituzioniSheet ctx={ctx} data={sheet.data} />}
+          {sheet.type === "entry" && <EntrySheet data={sheet.data} ctx={ctx} close={close} />}
+          {sheet.type === "ai" && <AiSheet ctx={ctx} close={close} />}
+          {sheet.type === "plans" && <PlansSheet ctx={ctx} close={close} />}
+          {sheet.type === "freq" && <FreqSheet ctx={ctx} />}
+          {sheet.type === "foods" && <FoodsSheet />}
+          {sheet.type === "recipes" && <RecipesSheet />}
+          {sheet.type === "report" && <ReportSheet ctx={ctx} />}
+          {sheet.type === "profile" && <ProfileSheet ctx={ctx} />}
+        </div>
       </div>
     </div>
   );
