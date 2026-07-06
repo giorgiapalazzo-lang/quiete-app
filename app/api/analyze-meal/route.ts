@@ -51,7 +51,9 @@ export async function POST(request: Request) {
 
   try {
     const message = await anthropic.messages.create({
-      model: "claude-opus-4-8",
+      // Sonnet: ottima visione per stimare porzioni/macro, molto più economico
+      // di Opus per foto frequenti (i crediti durano di più).
+      model: "claude-sonnet-5",
       max_tokens: 1024,
       messages: [
         {
