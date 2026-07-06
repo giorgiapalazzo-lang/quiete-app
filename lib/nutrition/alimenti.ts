@@ -215,7 +215,7 @@ export function sostituti(id: string, grammiBase: number, opts: { fodmapBasso?: 
   if (!base) return [];
   const ruolo = ruoloAlimento(base);
   const guida = MACRO_GUIDA[ruolo];
-  const targetGuida = guida === "kcal" ? base.kcal * (grammiBase / 100) : (base as any)[guida] * (grammiBase / 100);
+  const targetGuida = guida === "kcal" ? base.kcal * (grammiBase / 100) : base[guida] * (grammiBase / 100);
   const kcalBase = base.kcal * (grammiBase / 100);
 
   return ALIMENTI
@@ -224,7 +224,7 @@ export function sostituti(id: string, grammiBase: number, opts: { fodmapBasso?: 
     .filter((a) => !(opts.senzaGlutine && a.glutine))
     .filter((a) => !(opts.senzaLattosio && a.lattosio))
     .map((a) => {
-      const per100 = guida === "kcal" ? a.kcal : (a as any)[guida];
+      const per100 = guida === "kcal" ? a.kcal : a[guida];
       const grammi = per100 > 0 ? Math.round((targetGuida / per100) * 100) : a.porzioneG;
       const g = Math.max(5, grammi);
       return { alimento: a, grammi: g, nutri: nutriPerGrammi(a.id, g)! };

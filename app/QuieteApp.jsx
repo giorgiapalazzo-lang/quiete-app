@@ -301,6 +301,15 @@ function makeLocalDb(setStore) {
       async apply(origId, sost) { setStore((s) => ({ ...s, sostituzioni: { ...s.sostituzioni, [origId]: sost } })); },
       async clear(origId) { setStore((s) => { const m = { ...s.sostituzioni }; delete m[origId]; return { ...s, sostituzioni: m }; }); },
     },
+    liste: {
+      async create(name, items) { const id = "lst" + Date.now(); setStore((s) => ({ ...s, liste: [{ id, name: name || "Lista", items: (items || []).map((x, i) => ({ id: "li" + Date.now() + i, done: false, ...x })), ts: Date.now() }, ...s.liste] })); return id; },
+      async remove(id) { setStore((s) => ({ ...s, liste: s.liste.filter((l) => l.id !== id) })); },
+      async rename(id, name) { setStore((s) => ({ ...s, liste: s.liste.map((l) => (l.id === id ? { ...l, name } : l)) })); },
+      async addItem(id, it) { setStore((s) => ({ ...s, liste: s.liste.map((l) => (l.id === id ? { ...l, items: [...l.items, { id: "li" + Date.now(), done: false, ...it }] } : l)) })); },
+      async setQty(id, itemId, g) { setStore((s) => ({ ...s, liste: s.liste.map((l) => (l.id === id ? { ...l, items: l.items.map((x) => (x.id === itemId ? { ...x, g } : x)) } : l)) })); },
+      async toggle(id, itemId) { setStore((s) => ({ ...s, liste: s.liste.map((l) => (l.id === id ? { ...l, items: l.items.map((x) => (x.id === itemId ? { ...x, done: !x.done } : x)) } : l)) })); },
+      async removeItem(id, itemId) { setStore((s) => ({ ...s, liste: s.liste.map((l) => (l.id === id ? { ...l, items: l.items.filter((x) => x.id !== itemId) } : l)) })); },
+    },
     // AI vision — in prod this can also run as a Supabase Edge Function
     async analyzePhoto(base64, mime) {
       const prompt = `Sei un dietista esperto. Analizza la foto di questo pasto e stima porzioni e valori nutrizionali usando il piatto e le posate come riferimento di scala. Rispondi SOLO con JSON valido, senza testo prima o dopo, in questo formato esatto:
@@ -332,7 +341,8 @@ export default function App() {
     measures: [],
     supps: SUPPS.map((s, i) => ({ id: "sup" + i, ...s })),
     sostituzioni: {}, // { [foodId]: { id, n, g } } — sostituzioni applicate al piano
-    spesaExtra: [], // alimenti aggiunti a mano alla spesa: { id, n, g, cat }
+    spesaExtra: [], // alimenti aggiunti a mano alla spesa del piano: { id, n, g, cat }
+    liste: [], // liste della spesa salvate: { id, name, items:[{id,n,g,cat,done}], ts }
     lastMeal: null,
   });
   const db = useMemo(() => makeLocalDb(setStore), []);
@@ -351,6 +361,7 @@ export default function App() {
           supps: d.supps ?? s.supps,
           sostituzioni: d.sostituzioni ?? s.sostituzioni,
           spesaExtra: d.spesaExtra ?? s.spesaExtra,
+          liste: d.liste ?? s.liste,
           checked: new Set(d.checked ?? []),
           lastMeal: d.lastMeal ?? s.lastMeal,
         }));
@@ -363,11 +374,11 @@ export default function App() {
     try {
       localStorage.setItem("quiete_data", JSON.stringify({
         diary: store.diary, measures: store.measures, supps: store.supps,
-        sostituzioni: store.sostituzioni, spesaExtra: store.spesaExtra,
+        sostituzioni: store.sostituzioni, spesaExtra: store.spesaExtra, liste: store.liste,
         checked: [...store.checked], lastMeal: store.lastMeal,
       }));
     } catch {}
-  }, [store.diary, store.measures, store.supps, store.sostituzioni, store.spesaExtra, store.checked, store.lastMeal]);
+  }, [store.diary, store.measures, store.supps, store.sostituzioni, store.spesaExtra, store.liste, store.checked, store.lastMeal]);
   const [screen, setScreen] = useState("welcome");
   const [tab, setTab] = useState("oggi");
   const [sheet, setSheet] = useState(null);
@@ -1304,10 +1315,14 @@ function Piano({ day, setDay, setSheet, piano, store }) {
    SPESA (shopping list from the plan)
    ============================================================ */
 function Spesa({ store, db, tf, setTf, piano }) {
+  const [active, setActive] = useState("piano");
   const [q, setQ] = useState("");
+  const liste = store.liste || [];
   const sost = store.sostituzioni || {};
   const catAlim = (a) => (a.categoria === "carne" || a.categoria === "pesce") ? "Carne & pesce" : a.categoria === "verdura" ? "Verdura" : a.categoria === "frutta" ? "Frutta" : (a.categoria === "uova" || a.categoria === "latticini") ? "Frigo" : "Dispensa";
   const catName = (n) => { const k = nutriKey(n); if (["pollo", "merluzzo", "salmone", "gamberi", "tonno", "seppia", "vitello", "bresaola"].includes(k)) return "Carne & pesce"; if (["zucchine", "carote", "spinaci", "verdura"].includes(k)) return "Verdura"; if (["kiwi", "fragole", "frutta"].includes(k)) return "Frutta"; if (["yogurt", "uova", "formaggio"].includes(k)) return "Frigo"; return "Dispensa"; };
+  const fmt = (g) => g >= 1000 ? (g / 1000).toFixed(1) + " kg" : Math.round(g) + " g";
+  const results = q.trim().length >= 2 ? ALIMENTI.filter((a) => a.nome.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : [];
   const rows = useMemo(() => {
     const mult = tf === "day" ? 1 / 7 : tf === "month" ? 4.345 : 1;
     const agg = {};
@@ -1317,52 +1332,94 @@ function Spesa({ store, db, tf, setTf, piano }) {
     } else {
       DAYS.forEach((d) => [...COLAZIONE.items, ...SP_AM.items, ...WEEK[d].pranzo, ...MERENDA.items, ...WEEK[d].cena, ...EVO.items].forEach(add));
     }
-    return Object.entries(agg).map(([n, g]) => ({ n, g: g * mult, cat: catName(n), fromPlan: true }));
+    return Object.entries(agg).map(([n, g]) => ({ n, g: g * mult, cat: catName(n) }));
   }, [tf, piano, sost]);
-  const extra = (store.spesaExtra || []).map((x) => ({ ...x, cat: x.cat || "Dispensa", fromPlan: false }));
-  const byCat = {}; [...rows, ...extra].forEach((r) => (byCat[r.cat] = byCat[r.cat] || []).push(r));
-  const fmt = (g) => g >= 1000 ? (g / 1000).toFixed(1) + " kg" : Math.round(g) + " g";
-  const results = q.trim().length >= 2 ? ALIMENTI.filter((a) => a.nome.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : [];
-  return (
-    <div style={{ maxWidth: 720, margin: "0 auto" }}>
-      <Eyebrow>Collegata al piano</Eyebrow><H1>Lista della spesa</H1>
-      <p style={{ color: C.muted, fontSize: 13.5, margin: "0 0 14px" }}>Dagli alimenti del piano (con le sostituzioni applicate). Aggiungi altri alimenti e regola i pesi.</p>
-      <div style={{ display: "flex", background: C.greenL, borderRadius: 13, padding: 4, gap: 3, marginBottom: 12 }}>
-        {[["day", "Giorno"], ["week", "Settimana"], ["month", "Mese"]].map(([k, l]) => <button key={k} onClick={() => setTf(k)} style={{ flex: 1, border: "none", background: tf === k ? "#fff" : "none", boxShadow: tf === k ? "0 2px 7px -3px rgba(0,0,0,.2)" : "none", borderRadius: 10, padding: "10px 4px", fontFamily: sans, fontWeight: 600, fontSize: 12.5, color: C.ink, cursor: "pointer" }}>{l}</button>)}
-      </div>
-      <Card style={{ padding: 14 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Aggiungi un alimento alla spesa…" style={input} />
-        {results.map((a) => (
-          <div key={a.id} onClick={() => { db.shopping.addItem({ n: a.nome, g: a.porzioneG, cat: catAlim(a) }); setQ(""); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{catIcon(a.categoria)}</div>
-            <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: C.text }}>{a.nome}</span>
-            <Plus size={17} color={C.ink} />
-          </div>
-        ))}
-      </Card>
-      {Object.entries(byCat).map(([cat, items]) => (
-        <div key={cat} style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 11.5, letterSpacing: ".04em", textTransform: "uppercase", color: C.muted, fontWeight: 700, margin: "16px 2px 6px" }}>{cat}</div>
-          {items.map((r) => r.fromPlan ? (() => {
-            const ck = store.checked.has(r.n);
-            return (
-              <div key={"p" + r.n} onClick={() => db.shopping.toggle(r.n)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7, cursor: "pointer" }}>
-                <span style={{ width: 22, height: 22, flex: "0 0 auto", border: `2px solid ${ck ? C.ink : C.line}`, borderRadius: 7, background: ck ? C.ink : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>{ck && <Check size={14} />}</span>
-                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: C.text, textDecoration: ck ? "line-through" : "none", opacity: ck ? .5 : 1 }}>{r.n}</span>
-                <span style={{ fontSize: 12.5, color: C.muted, fontWeight: 600 }}>{fmt(r.g)}</span>
-              </div>
-            );
-          })() : (
-            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7 }}>
-              <Leaf size={15} color={C.gold} style={{ flex: "0 0 auto" }} />
-              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: C.text, minWidth: 0 }}>{r.n}</span>
-              <input value={r.g} onChange={(e) => db.shopping.setQty(r.id, +e.target.value.replace(/[^0-9]/g, "") || 0)} inputMode="numeric" style={{ width: 58, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontFamily: sans, fontSize: 16, textAlign: "right", background: "#fff", color: C.text }} />
-              <span style={{ fontSize: 12, color: C.muted }}>g</span>
-              <button onClick={() => db.shopping.removeItem(r.id)} aria-label="Elimina" style={{ background: "none", border: "none", color: C.clay, cursor: "pointer", display: "flex" }}><Trash2 size={15} /></button>
-            </div>
-          ))}
+  const extra = (store.spesaExtra || []).map((x) => ({ ...x, cat: x.cat || "Dispensa" }));
+  const saved = active !== "piano" ? liste.find((l) => l.id === active) : null;
+
+  const chip = (on) => ({ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 4, border: `1px solid ${on ? C.ink : C.line}`, background: on ? C.ink : C.card, color: on ? "#fff" : C.muted, borderRadius: 100, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: sans, whiteSpace: "nowrap" });
+  const addFood = (a) => { const it = { n: a.nome, g: a.porzioneG, cat: catAlim(a) }; if (active === "piano") db.shopping.addItem(it); else db.liste.addItem(active, it); setQ(""); };
+  const saveAsList = () => {
+    const items = [...rows.map((r) => ({ n: r.n, g: Math.round(r.g), cat: r.cat })), ...extra.map((r) => ({ n: r.n, g: r.g, cat: r.cat }))];
+    db.liste.create("Spesa " + (liste.length + 1), items).then((id) => id && setActive(id));
+  };
+  const secH = (t) => <div style={{ fontSize: 11.5, letterSpacing: ".04em", textTransform: "uppercase", color: C.muted, fontWeight: 700, margin: "16px 2px 6px" }}>{t}</div>;
+  const addCard = (
+    <Card style={{ padding: 14 }}>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Aggiungi un alimento…" style={input} />
+      {results.map((a) => (
+        <div key={a.id} onClick={() => addFood(a)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: C.greenL, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{catIcon(a.categoria)}</div>
+          <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: C.text }}>{a.nome}</span>
+          <Plus size={17} color={C.ink} />
         </div>
       ))}
+    </Card>
+  );
+
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <Eyebrow>Spesa</Eyebrow><H1>Liste della spesa</H1>
+      <div style={{ display: "flex", gap: 7, overflowX: "auto", padding: "2px 0 12px" }}>
+        <button onClick={() => setActive("piano")} style={chip(active === "piano")}>Dal piano</button>
+        {liste.map((l) => <button key={l.id} onClick={() => setActive(l.id)} style={chip(active === l.id)}>{l.name}</button>)}
+        <button onClick={() => db.liste.create("Nuova lista", []).then((id) => id && setActive(id))} style={{ ...chip(false), color: C.ink }}><Plus size={13} /> Nuova</button>
+      </div>
+
+      {active === "piano" ? (
+        <>
+          <p style={{ color: C.muted, fontSize: 13, margin: "0 0 12px", lineHeight: 1.5 }}>Generata dal piano (con le sostituzioni). Aggiungi alimenti, regola i pesi, o salvala come lista.</p>
+          <div style={{ display: "flex", background: C.greenL, borderRadius: 13, padding: 4, gap: 3, marginBottom: 12 }}>
+            {[["day", "Giorno"], ["week", "Settimana"], ["month", "Mese"]].map(([k, l]) => <button key={k} onClick={() => setTf(k)} style={{ flex: 1, border: "none", background: tf === k ? "#fff" : "none", boxShadow: tf === k ? "0 2px 7px -3px rgba(0,0,0,.2)" : "none", borderRadius: 10, padding: "10px 4px", fontFamily: sans, fontWeight: 600, fontSize: 12.5, color: C.ink, cursor: "pointer" }}>{l}</button>)}
+          </div>
+          {addCard}
+          {(() => { const byCat = {}; [...rows.map((r) => ({ ...r, fromPlan: true })), ...extra.map((r) => ({ ...r, fromPlan: false }))].forEach((r) => (byCat[r.cat] = byCat[r.cat] || []).push(r)); return Object.entries(byCat).map(([cat, items]) => (
+            <div key={cat} style={{ marginBottom: 6 }}>
+              {secH(cat)}
+              {items.map((r) => r.fromPlan ? (() => {
+                const ck = store.checked.has(r.n);
+                return (
+                  <div key={"p" + r.n} onClick={() => db.shopping.toggle(r.n)} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7, cursor: "pointer" }}>
+                    <span style={{ width: 22, height: 22, flex: "0 0 auto", border: `2px solid ${ck ? C.ink : C.line}`, borderRadius: 7, background: ck ? C.ink : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>{ck && <Check size={14} />}</span>
+                    <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: C.text, textDecoration: ck ? "line-through" : "none", opacity: ck ? .5 : 1 }}>{r.n}</span>
+                    <span style={{ fontSize: 12.5, color: C.muted, fontWeight: 600 }}>{fmt(r.g)}</span>
+                  </div>
+                );
+              })() : (
+                <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7 }}>
+                  <Leaf size={15} color={C.gold} style={{ flex: "0 0 auto" }} />
+                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: C.text, minWidth: 0 }}>{r.n}</span>
+                  <input value={r.g} onChange={(e) => db.shopping.setQty(r.id, +e.target.value.replace(/[^0-9]/g, "") || 0)} inputMode="numeric" style={{ width: 58, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontFamily: sans, fontSize: 16, textAlign: "right", background: "#fff", color: C.text }} />
+                  <span style={{ fontSize: 12, color: C.muted }}>g</span>
+                  <button onClick={() => db.shopping.removeItem(r.id)} aria-label="Elimina" style={{ background: "none", border: "none", color: C.clay, cursor: "pointer", display: "flex" }}><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+          )); })()}
+          <button onClick={saveAsList} style={{ ...btnGhost, width: "100%", justifyContent: "center", marginTop: 10 }}><Check size={15} /> Salva come lista</button>
+        </>
+      ) : saved ? (
+        <>
+          <input value={saved.name} onChange={(e) => db.liste.rename(saved.id, e.target.value)} style={{ ...input, fontWeight: 600, marginBottom: 12 }} />
+          {addCard}
+          {(() => { const byCat = {}; saved.items.forEach((it) => (byCat[it.cat || "Dispensa"] = byCat[it.cat || "Dispensa"] || []).push(it)); return Object.entries(byCat).map(([cat, items]) => (
+            <div key={cat} style={{ marginBottom: 6 }}>
+              {secH(cat)}
+              {items.map((it) => (
+                <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 13, marginBottom: 7 }}>
+                  <span onClick={() => db.liste.toggle(saved.id, it.id)} style={{ width: 22, height: 22, flex: "0 0 auto", border: `2px solid ${it.done ? C.ink : C.line}`, borderRadius: 7, background: it.done ? C.ink : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", cursor: "pointer" }}>{it.done && <Check size={14} />}</span>
+                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: C.text, minWidth: 0, textDecoration: it.done ? "line-through" : "none", opacity: it.done ? .5 : 1 }}>{it.n}</span>
+                  <input value={it.g} onChange={(e) => db.liste.setQty(saved.id, it.id, +e.target.value.replace(/[^0-9]/g, "") || 0)} inputMode="numeric" style={{ width: 58, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontFamily: sans, fontSize: 16, textAlign: "right", background: "#fff", color: C.text }} />
+                  <span style={{ fontSize: 12, color: C.muted }}>g</span>
+                  <button onClick={() => db.liste.removeItem(saved.id, it.id)} aria-label="Elimina" style={{ background: "none", border: "none", color: C.clay, cursor: "pointer", display: "flex" }}><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+          )); })()}
+          {!saved.items.length && <div style={{ fontSize: 13, color: C.muted, padding: "16px 0", textAlign: "center" }}>Lista vuota. Aggiungi alimenti qui sopra.</div>}
+          <button onClick={() => { db.liste.remove(saved.id); setActive("piano"); }} style={{ ...btnGhost, width: "100%", justifyContent: "center", marginTop: 10, color: C.clay, borderColor: "#EDD3C8" }}><Trash2 size={15} /> Elimina lista</button>
+        </>
+      ) : null}
       <Disc />
     </div>
   );
